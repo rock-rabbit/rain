@@ -391,6 +391,11 @@ func (ctl *control) begin() error {
 		ctl.outname = basic.getFilename()
 	}
 
+	// 文件名非法字符过滤
+	if ctl.config.AutoFilterFilename {
+		ctl.outname = filterFileName(ctl.outname)
+	}
+
 	// 文件检查
 	path := ctl.outpath()
 	isFileExist := fileExist(path)
@@ -498,11 +503,28 @@ func (ctl *control) sendEventFunc() func() {
 			Outpath:         ctl.outpath(),
 			Error:           ctl.getError(),
 		}
-		ratio                 = 1 / 0.2
+		// ratio                 = 1 / 0.2
 		nowCompletedLength    = int64(0)
 		differCompletedLength = int64(0)
 		remainingLength       = int64(0)
+		// downloadRecord 记录五次下载的字节数，用于计算下载速度
+		downloadRecord = make([]int64, 0, 5)
+		// downloadRecordFunc 记录下载字节数并返回下载速度
+		downloadRecordFunc = func(n int64) int64 {
+			if len(downloadRecord) >= 5 {
+				downloadRecord = downloadRecord[1:5:5]
+			}
+
+			downloadRecord = append(downloadRecord, n)
+
+			var speed int64
+			for _, num := range downloadRecord {
+				speed += num
+			}
+			return speed
+		}
 	)
+
 	return func() {
 		// 计算
 		nowCompletedLength = atomic.LoadInt64(ctl.completedSize)
@@ -514,7 +536,7 @@ func (ctl *control) sendEventFunc() func() {
 
 		stat.Status = ctl.status
 		stat.CompletedLength = nowCompletedLength
-		stat.DownloadSpeed = int64(float64(differCompletedLength) * ratio)
+		stat.DownloadSpeed = downloadRecordFunc(differCompletedLength)
 		if remainingLength > 0 && stat.DownloadSpeed > 0 {
 			stat.EstimatedTime = time.Duration((remainingLength / stat.DownloadSpeed) * int64(time.Second))
 		}

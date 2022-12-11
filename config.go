@@ -20,6 +20,8 @@ type Config struct {
 	AllowOverwrite bool
 	// autoFileRenaming 文件自动重命名，新文件名在名称之后扩展名之前加上一个点和一个数字（1..9999）。默认:true
 	AutoFileRenaming bool
+	// AutoFilterFilename 自动过滤掉文件名称中的非法字符
+	AutoFilterFilename bool
 	// breakpointResume 是否启用断点续传，默认为 true
 	BreakpointResume bool
 	// autoSaveTnterval 自动保存断点文件的时间，默认为 1 秒
@@ -37,18 +39,19 @@ type Config struct {
 // NewConfig 创建默认配置
 func NewConfig() *Config {
 	return &Config{
-		RoutineCount:     1,
-		RoutineSize:      1048576 * 20,
-		DiskCache:        1048576 * 16,
-		SpeedLimit:       0,
-		CreateDir:        true,
-		AllowOverwrite:   true,
-		BreakpointResume: true,
-		AutoFileRenaming: true,
-		Timeout:          time.Minute * 10,
-		RetryNumber:      5,
-		RetryTime:        0,
-		BreakpointExt:    ".temp.rain",
+		RoutineCount:       1,
+		RoutineSize:        1048576 * 20,
+		DiskCache:          1048576 * 16,
+		SpeedLimit:         0,
+		CreateDir:          true,
+		AllowOverwrite:     true,
+		BreakpointResume:   true,
+		AutoFileRenaming:   true,
+		AutoFilterFilename: true,
+		Timeout:            time.Minute * 10,
+		RetryNumber:        5,
+		RetryTime:          0,
+		BreakpointExt:      ".temp.rain",
 	}
 }
 

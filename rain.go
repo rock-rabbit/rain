@@ -86,7 +86,8 @@ func (rain *Rain) New(uri string, opts ...OptionFunc) *RainControl {
 			body:   rain.body,
 			header: header,
 		},
-		perm: rain.perm,
+		perm:   rain.perm,
+		outdir: rain.outdir,
 	}
 
 	for _, opt := range opts {
@@ -169,6 +170,11 @@ func (rain *Rain) SetBreakpointResume(d bool) {
 // SetAutoFileRenaming 设置是否自动重命名文件，新文件名在名称之后扩展名之前加上一个点和一个数字（1..9999）
 func (rain *Rain) SetAutoFileRenaming(d bool) {
 	rain.config.AutoFileRenaming = d
+}
+
+// SetAutoFilterFilename 设置是否自动过滤掉文件名称中的非法字符
+func (rain *Rain) SetAutoFilterFilename(d bool) {
+	rain.config.AutoFilterFilename = d
 }
 
 // SetTimeout 设置下载超时时间

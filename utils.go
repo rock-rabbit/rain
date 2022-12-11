@@ -1,6 +1,7 @@
 package rain
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math/rand"
@@ -8,8 +9,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // contextDone context 是否已经完成
@@ -117,4 +120,43 @@ func autoFileRenaming(dir, name string) (string, string) {
 		i++
 	}
 	return path, filename
+}
+
+// filterFileName 过滤非法字符
+func filterFileName(name string) string {
+	// 过滤头部的空格
+	name = strings.TrimPrefix(name, regexGetOne(`^([[:blank:]]+)`, name))
+	// 过滤非法字符
+	for _, v := range []rune{'?', '\\', '/', '*', '"', '<', '>', '|', ':'} {
+		name = strings.ReplaceAll(name, string(v), "")
+	}
+	// 截取前 255 个字
+	if getStringLength(name) > 255 {
+		i := 0
+		c := bytes.NewBufferString("")
+		for _, v := range name {
+			c.WriteString(string(v))
+			i++
+			if i == 255 {
+				break
+			}
+		}
+		name = c.String()
+	}
+	return name
+}
+
+// getStringLength 获取字符串的长度
+func getStringLength(str string) int {
+	return utf8.RuneCountInString(str)
+}
+
+// regexGetOne 获取匹配到的单个字符串
+func regexGetOne(str, s string) string {
+	re := regexp.MustCompile(str)
+	submatch := re.FindStringSubmatch(s)
+	if len(submatch) <= 1 {
+		return ""
+	}
+	return submatch[1]
 }

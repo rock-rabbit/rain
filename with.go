@@ -119,6 +119,13 @@ func WithAutoFileRenaming(d bool) OptionFunc {
 	}
 }
 
+// WithAutoFilterFilename 设置是否自动过滤掉文件名称中的非法字符
+func WithAutoFilterFilename(d bool) OptionFunc {
+	return func(ctl *control) {
+		ctl.config.AutoFilterFilename = d
+	}
+}
+
 // WithTimeout 设置下载超时时间
 func WithTimeout(d time.Duration) OptionFunc {
 	return func(ctl *control) {
