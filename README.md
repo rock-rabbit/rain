@@ -30,7 +30,6 @@ go get -u github.com/rock-rabbit/rain
 * 完善性能测试
 * 搭建 rain 官网
 * 完善文档
-* 2023年06月01日开源
 
 ## 使用方法
 
