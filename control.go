@@ -117,13 +117,19 @@ func (ctl *control) getError() error {
 
 // finish 完成任务
 func (ctl *control) finish(err error) {
+	// 取消上下文不算错误
+	canceled := errors.Is(err, context.Canceled)
+	if canceled {
+		err = nil
+	}
+
 	ctl.err = err
 	ctl.close()
 	// 断点文件
 	if ctl.bpfile != nil {
 		ctl.exportBreakpoint()
 		ctl.bpfile.Close()
-		if err == nil {
+		if err == nil && !canceled {
 			os.Remove(ctl.bpfilepath())
 		}
 	}
@@ -158,15 +164,18 @@ func (ctl *control) startTask() {
 	// 消费任务
 	ctl.consumption(taskchan, done)
 	// 等待任务完成
-	var err error
+	var errs []error
 	for i := 0; i < ctl.threadCount; i++ {
-		err = <-done
+		err := <-done
 		if err != nil {
-			ctl.finish(err)
-			return
+			errs = append(errs, err)
 		}
 	}
-	ctl.finish(nil)
+	if len(errs) == 0 {
+		ctl.finish(nil)
+	} else {
+		ctl.finish(errs[0])
+	}
 }
 
 // recover 恢复断点
@@ -267,19 +276,23 @@ func (ctl *control) download(task *Block) error {
 		res  *http.Response
 		dest io.Writer
 	)
-	// 单协程下载一个文件时
+
+	// 创建文件写入器
+	dest = fileWriteAt(ctl.outfile, task)
+
+	// 当一次性下载完整文件时
 	if task.isAll(ctl.totalSize) {
-		dest = ctl.outfile
 		res, err = ctl.request.defaultDo()
 	} else {
-		dest = fileWriteAt(ctl.outfile, task)
 		res, err = ctl.request.rangeDo(task.Start, task.End)
 	}
 	if err != nil {
 		return err
 	}
 	defer res.Body.Close()
-	_, err = ctl.iocopy(task, dest, res.Body)
+
+	// 数据拷贝
+	_, err = ctl.iocopy(dest, res.Body)
 	if err != nil {
 		return err
 	}
@@ -287,7 +300,7 @@ func (ctl *control) download(task *Block) error {
 }
 
 // iocopy 拷贝数据
-func (ctl *control) iocopy(task *Block, dst io.Writer, src io.Reader) (written int64, err error) {
+func (ctl *control) iocopy(dst io.Writer, src io.Reader) (written int64, err error) {
 	// buffer size
 	size := ctl.config.DiskCache
 	if ctl.rate != nil {

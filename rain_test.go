@@ -3,6 +3,7 @@ package rain_test
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/rock-rabbit/rain"
 )
@@ -85,4 +86,25 @@ func TestSpeedLimit(t *testing.T) {
 		}
 		fmt.Printf("outpath: %s\n", ctl.Outpath())
 	}
+}
+
+// 测试下载中途取消
+func TestClose(t *testing.T) {
+	v := task[2]
+
+	ctl := rain.New(
+		v.uri,
+		rain.WithOutdir("./tmp"),
+		rain.WithOutname(v.name),
+		rain.WithEvent(rain.NewBar()),
+	)
+	go func() {
+		time.Sleep(time.Second * 13)
+		ctl.Close()
+	}()
+	err := <-ctl.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("outpath: %s\n", ctl.Outpath())
 }
