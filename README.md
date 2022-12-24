@@ -29,7 +29,7 @@ go get -u github.com/rock-rabbit/rain
 * 完善单元测试
 * 完善性能测试
 * 搭建 rain 官网
-* 完善文档
+* 完善文档 √
 
 ## 使用方法
 
@@ -181,3 +181,99 @@ fmt.Printf("文件位置：%s\n", ctl.Outpath())
 1.01 Mib / 1.01 Mib [=====================================] 100% 694.99 Kib/s 0s
 文件位置：/Users/rockrabbit/projects/rain-service/temp/big_buck_bunny_720p_1mb.mp4
 ```
+
+对于以上例子的解读：
+
+我们使用 `rain.SetOutdir` 方法修改了默认的文件输出目录，之后 `rain.New` 时会应用这个设置。
+
+`rain.SetXXX` 还有很多参数可以修改，具体可以自行查看。
+
+我们在下载时需要自己监听下载进度信息，可以参考一下例子：
+
+``` golang
+// RainProgress 监听下载
+type RainProgress struct{}
+
+// Change 实现接口
+func (*RainProgress) Change(stat *rain.Stat) {
+	fmt.Println(stat.Progress)
+}
+
+func main() {
+	uri := "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4"
+	ctl := rain.New(uri, rain.WithEvent(&RainProgress{}))
+	err := <-ctl.Run()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("文件位置：%s\n", ctl.Outpath())
+
+}
+```
+
+`rain.Stat` 结构体参数：
+
+``` golang
+type Stat struct {
+	// Status 状态
+	Status Status
+	// TotalLength 文件总大小
+	TotalLength int64
+	// CompletedLength 已下载的文件大小
+	CompletedLength int64
+	// DownloadSpeed 每秒下载字节数
+	DownloadSpeed int64
+	// EstimatedTime 预计下载完成还需要的时间
+	EstimatedTime time.Duration
+	// Progress 下载进度, 长度为 100
+	Progress int
+	// Outpath 文件输出路径
+	Outpath string
+	// Error 下载错误信息
+	Error error
+}
+
+// Status 运行状态
+type Status int
+
+const (
+	// STATUS_BEGIN 准备中，表示还未开始执行下载
+	STATUS_BEGIN = Status(iota)
+	// STATUS_RUNNING 运行中，表示正在执行下载操作
+	STATUS_RUNNING
+	// STATUS_FINISH 下载完成，不管报错或者下载成功都会是此状态
+	STATUS_FINISH
+)
+```
+
+我们还可以自己创建一个全新的 rain 下载器，请看以下示例：
+
+``` golang
+func main() {
+	// 配置全新的下载器
+	downloader := rain.NewRain()
+	downloader.SetTimeout(time.Second * 10)
+	downloader.SetHeader("referer", "https://www.68wu.cn/")
+
+	// 使用自定义的下载器下载
+	ctl := downloader.New(
+		"https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4",
+		rain.WithOutdir("./images"),
+		rain.WithEvent(rain.NewBar()),
+	)
+	err := <-ctl.Run()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("下载完成：%s\n", ctl.Outpath())
+}
+```
+
+
+
+## 项目
+以下项目使用到了 rain :
+
+* [rain-service](https://github.com/rock-rabbit/rain-service): rpc 下载服务
+* [rain-service-gui](https://github.com/rock-rabbit/rain-service-gui): 基于 rain-service 的跨平台图形界面
+
