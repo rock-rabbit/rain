@@ -123,6 +123,11 @@ func (ctl *control) finish(err error) {
 		err = nil
 	}
 
+	// 上下文超时
+	if errors.Is(err, context.DeadlineExceeded) {
+		err = fmt.Errorf("timeout%w", err)
+	}
+
 	ctl.err = err
 	ctl.close()
 	// 断点文件
