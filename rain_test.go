@@ -108,3 +108,23 @@ func TestClose(t *testing.T) {
 	}
 	fmt.Printf("outpath: %s\n", ctl.Outpath())
 }
+
+// TestTimeout 测试超时
+func TestTimeout(t *testing.T) {
+	// 配置全新的下载器
+	downloader := rain.NewRain()
+	downloader.SetTimeout(time.Second * 5)
+	downloader.SetHeader("referer", "https://www.68wu.cn/")
+
+	// 使用自定义的下载器下载
+	ctl := downloader.New(
+		"https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4",
+		rain.WithOutdir("./tmp"),
+		rain.WithEvent(rain.NewBar()),
+	)
+	err := <-ctl.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("下载完成：%s\n", ctl.Outpath())
+}
