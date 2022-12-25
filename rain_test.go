@@ -30,7 +30,7 @@ var task = []struct {
 func TestSingleThread(t *testing.T) {
 	rain.SetRoutineSize(1 << 20)
 	for _, v := range task {
-		ctl := rain.New(v.uri, rain.WithOutdir("./tmp"), rain.WithOutname(v.name))
+		ctl := rain.New(v.uri, rain.WithOutdir("./tmp"), rain.WithOutname(v.name), rain.WithEvent(rain.NewBar()))
 		err := <-ctl.Run()
 		if err != nil {
 			t.Fatal(err)

@@ -242,5 +242,5 @@ func (rc *RainControl) Error() error {
 
 // Outpath 获取输出位置
 func (rc *RainControl) Outpath() string {
-	return rc.ctl.outpath()
+	return rc.ctl.outpath
 }
