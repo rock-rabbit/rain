@@ -42,10 +42,9 @@ func main() {
 	ctl := rain.New(
         "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4",
         rain.WithBar(),
-    )
-	err := <-ctl.Run()
-	if err != nil {
-		panic(err)
+    ).Run()
+	if ctl.Error() != nil {
+		panic(ctl.Error())
 	}
 	fmt.Printf("下载完成：%s\n", ctl.Outpath())
 }
@@ -61,7 +60,7 @@ func main() {
 对于以上示例进行解读：
 
 首先，使用 `rain.New` 方法创建了一个资源下载控制器，有两个参数、分别是：`资源链接`和`命令行进度条`。
-之后，我们执行了控制器的 `Run` 方法，`Run` 方法会执行下载并返回带有错误信息的通道，阻塞监听通道内的错误。
+之后，我们执行了控制器的 `Run` 方法，`Run` 方法会阻塞等待下载完成。
 
 最后，没有报错就表示下载完成，可以使用控制器的 `Outpath` 方法获取下载文件的绝对路径。
 
@@ -164,10 +163,9 @@ rain.SetOutdir("./temp")
 
 // 因为上面已经修改了默认的配置，再次使用 rain.New 时就会应用配置
 uri := "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4"
-ctl := rain.New(uri, rain.WithBar())
-err := <-ctl.Run()
-if err != nil {
-	panic(err)
+ctl := rain.New(uri, rain.WithBar()).Run()
+if ctl.Error() != nil {
+	panic(ctl.Error())
 }
 fmt.Printf("文件位置：%s\n", ctl.Outpath())
 ```
@@ -199,10 +197,9 @@ func (*RainProgress) Change(stat *rain.Stat) {
 
 func main() {
 	uri := "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4"
-	ctl := rain.New(uri, rain.WithEvent(&RainProgress{}))
-	err := <-ctl.Run()
-	if err != nil {
-		panic(err)
+	ctl := rain.New(uri, rain.WithEvent(&RainProgress{})).Run()
+	if ctl.Error() != nil {
+		panic(ctl.Error())
 	}
 	fmt.Printf("文件位置：%s\n", ctl.Outpath())
 
@@ -235,10 +232,9 @@ func (*RainProgress) Finish(stat *rain.EventExtend) {
 
 func main() {
 	uri := "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4"
-	ctl := rain.New(uri, rain.WithEventExtend(&RainProgress{}))
-	err := <-ctl.Run()
-	if err != nil {
-		panic(err)
+	ctl := rain.New(uri, rain.WithEventExtend(&RainProgress{})).Run()
+	if ctl.Error() != nil {
+		panic(ctl.Error())
 	}
 	fmt.Printf("文件位置：%s\n", ctl.Outpath())
 
@@ -306,10 +302,9 @@ func main() {
 		"https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4",
 		rain.WithOutdir("./images"),
 		rain.WithBar(),
-	)
-	err := <-ctl.Run()
-	if err != nil {
-		panic(err)
+	).Run()
+	if ctl.Error() != nil {
+		panic(ctl.Error())
 	}
 	fmt.Printf("下载完成：%s\n", ctl.Outpath())
 }

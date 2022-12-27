@@ -1,126 +1,188 @@
 package rain_test
 
 import (
+	"crypto/md5"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/rock-rabbit/rain"
 )
 
-var task = []struct {
-	uri  string
-	name string
-}{
+func init() {
+	// 删除临时文件
+	os.RemoveAll("./tmp")
+	// 测试配置
+	rain.SetOutdir("./tmp")
+}
+
+// NewFileServer 新建测试文件服务
+func NewFileServer(t *testing.T, path string, exec func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		w.Header().Set("etag", MD5(data))
+		w.Header().Set("content-length", fmt.Sprint(len(data)))
+		w.Header().Set("accept-ranges", "bytes")
+
+		hrange := r.Header.Get("range")
+		if hrange != "" {
+			ranges := regexp.MustCompile(`bytes=(\d+)-(\d+)`).FindStringSubmatch(hrange)
+			if len(ranges) != 3 {
+				t.Fatal("bytes 长度错误")
+			}
+			start, err := strconv.ParseInt(ranges[1], 10, 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			end, err := strconv.ParseInt(ranges[2], 10, 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.Header().Set("content-range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
+			w.Header().Set("content-length", fmt.Sprint(end-start+1))
+
+			exec(w, r)
+
+			w.WriteHeader(http.StatusPartialContent)
+			w.Write(data[start:end])
+			return
+		}
+
+		exec(w, r)
+
+		w.WriteHeader(http.StatusOK)
+		w.Write(data)
+	}))
+	_, filename := filepath.Split(path)
+	server.URL = server.URL + "/test/" + filename
+	return server
+}
+
+func MD5(data []byte) string {
+	return fmt.Sprintf("%x", md5.Sum(data))
+}
+
+func FileMD5(path string) string {
+	data, _ := os.ReadFile(path)
+	return MD5(data)
+}
+
+type TestFile struct {
+	Path string
+	Name string
+	MD5  string
+}
+
+var tf = []*TestFile{
 	{
-		uri:  "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_5mb.mp4",
-		name: "test5m.mp4",
-	},
-	{
-		uri:  "https://sample-videos.com/img/Sample-jpg-image-10mb.jpg",
-		name: "test10m.jpg",
+		Path: "./test/test_720p_5m.mp4",
+		Name: "test_720p_5m.mp4",
+		MD5:  "7e245fc2483742414604ce7e67c13111",
 	},
 }
 
 // TestSingleThread 测试单协程下载
 func TestSingleThread(t *testing.T) {
-	rain.SetRoutineSize(1 << 20)
-	for _, v := range task {
-		ctl := rain.New(v.uri, rain.WithOutdir("./tmp"), rain.WithOutname(v.name), rain.WithBar())
-		err := <-ctl.Run()
-		if err != nil {
-			t.Fatal(err)
+	for key, val := range tf {
+		server := NewFileServer(t, val.Path, func(w http.ResponseWriter, r *http.Request) {})
+		ctl := rain.New(server.URL).Run()
+		if ctl.Error() != nil {
+			t.Fatal(ctl.Error())
+		}
+		if FileMD5(ctl.Outpath()) != val.MD5 {
+			t.Fatal(key, "md5 错误")
 		}
 	}
 }
 
-// TestThreads 测试多协程下载
-func TestThreads(t *testing.T) {
-	rain.SetRoutineSize(1 << 20)
-	rain.SetRoutineCount(7)
-	for _, v := range task {
-		ctl := rain.New(v.uri, rain.WithOutdir("./tmp"), rain.WithOutname(v.name), rain.WithBar())
-		err := <-ctl.Run()
-		if err != nil {
-			t.Fatal(err)
+// TestMultithread 测试多协程下载
+func TestMultithread(t *testing.T) {
+	for key, val := range tf {
+		server := NewFileServer(t, val.Path, func(w http.ResponseWriter, r *http.Request) {})
+		ctl := rain.New(server.URL, rain.WithRoutineCount(3)).Run()
+		if ctl.Error() != nil {
+			t.Fatal(ctl.Error())
+		}
+		if FileMD5(ctl.Outpath()) != val.MD5 {
+			t.Fatal(key, "md5 错误")
 		}
 	}
 }
 
-// TestEvent 测试事件
-func TestEvent(t *testing.T) {
-	rain.SetRoutineSize(1 << 20)
-	rain.SetRoutineCount(2)
-	for _, v := range task {
-		ctl := rain.New(
-			v.uri,
-			rain.WithOutdir("./tmp"),
-			rain.WithOutname(v.name),
-			rain.WithBar(),
-		)
-		err := <-ctl.Run()
-		if err != nil {
-			t.Fatal(err)
+// TestBar 测试 Bar 进度条
+func TestBar(t *testing.T) {
+	for key, val := range tf {
+		server := NewFileServer(t, val.Path, func(w http.ResponseWriter, r *http.Request) {})
+		ctl := rain.New(server.URL, rain.WithBar()).Run()
+		if ctl.Error() != nil {
+			t.Fatal(ctl.Error())
 		}
-		fmt.Printf("outpath: %s\n", ctl.Outpath())
+		if FileMD5(ctl.Outpath()) != val.MD5 {
+			t.Fatal(key, "md5 错误")
+		}
 	}
 }
 
-// 测试限速下载
-func TestSpeedLimit(t *testing.T) {
-	rain.SetSpeedLimit(1024 * 50)
-	for _, v := range task {
-		ctl := rain.New(
-			v.uri,
-			rain.WithOutdir("./tmp"),
-			rain.WithOutname(v.name),
-			rain.WithBar(),
-		)
-		err := <-ctl.Run()
-		if err != nil {
-			t.Fail()
-		}
-		fmt.Printf("outpath: %s\n", ctl.Outpath())
-	}
-}
-
-// 测试下载中途取消
+// TestClose 测试取消下载
 func TestClose(t *testing.T) {
-	v := task[1]
-
-	ctl := rain.New(
-		v.uri,
-		rain.WithOutdir("./tmp"),
-		rain.WithOutname(v.name),
-		rain.WithBar(),
-	)
-	go func() {
-		time.Sleep(time.Second * 13)
-		ctl.Close()
-	}()
-	err := <-ctl.Run()
-	if err != nil {
-		t.Fatal(err)
+	for key, val := range tf {
+		server := NewFileServer(t, val.Path, func(w http.ResponseWriter, r *http.Request) {})
+		ctl := rain.New(server.URL, rain.WithSpeedLimit(1024<<10))
+		go func() {
+			time.Sleep(time.Second)
+			ctl.Close()
+		}()
+		ctl.Run()
+		if ctl.Error() != nil {
+			t.Fatal(ctl.Error())
+		}
+		// 检查文件是否下载完成
+		if FileMD5(ctl.Outpath()) == val.MD5 {
+			t.Fatal(key, "不应该下载完成")
+		}
+		// 检查断点文件
+		_, err := os.Stat(ctl.Outpath() + ".temp.rain")
+		if os.IsNotExist(err) {
+			t.Fatal(key, "断点文件不存在")
+		}
 	}
-	fmt.Printf("outpath: %s\n", ctl.Outpath())
 }
 
-// TestTimeout 测试超时
-func TestTimeout(t *testing.T) {
-	// 配置全新的下载器
-	downloader := rain.NewRain()
-	downloader.SetTimeout(time.Second * 5)
-	downloader.SetHeader("referer", "https://www.68wu.cn/")
+// TestAutoFileRenaming 测试文件重命名
+func TestAutoFileRenaming(t *testing.T) {
+	for key, val := range tf {
+		server := NewFileServer(t, val.Path, func(w http.ResponseWriter, r *http.Request) {})
 
-	// 使用自定义的下载器下载
-	ctl := downloader.New(
-		"https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4",
-		rain.WithOutdir("./tmp"),
-		rain.WithBar(),
-	)
-	err := <-ctl.Run()
-	if err != nil {
-		t.Fatal(err)
+		// 创建同名文件
+		os.Mkdir("./tmp", os.ModePerm)
+		f, err := os.Create("./tmp/" + val.Name)
+		if err != nil {
+			t.Fatal(key, err)
+		}
+		f.Close()
+
+		ctl := rain.New(server.URL, rain.WithAutoFileRenaming(true)).Run()
+		if ctl.Error() != nil {
+			t.Fatal(ctl.Error())
+		}
+
+		// 检查文件名称
+		ext := filepath.Ext(val.Path)
+		filename := fmt.Sprintf("%s.%d%s", strings.TrimSuffix(val.Name, ext), 1, ext)
+		_, outname := filepath.Split(ctl.Outpath())
+		if filename != outname {
+			t.Fatal(key, "文件名称错误", filename, outname)
+		}
 	}
-	fmt.Printf("下载完成：%s\n", ctl.Outpath())
 }
