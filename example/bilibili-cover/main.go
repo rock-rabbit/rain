@@ -54,7 +54,6 @@ type recommendList struct {
 }
 
 func (r *recommendList) downloadPic(outdir string) error {
-	var err error
 	for idx, item := range r.Data.Item {
 		name := item.Owner.Name + "_" + item.Bvid + "_" + item.Title + ".jpg"
 		uri := item.Pic
@@ -62,7 +61,7 @@ func (r *recommendList) downloadPic(outdir string) error {
 			continue
 		}
 		fmt.Println("下载", idx, ":", item.Bvid, uri)
-		err = <-rain.New(
+		ctl := rain.New(
 			uri,
 			rain.WithOutdir(outdir),
 			rain.WithOutname(name),
@@ -72,8 +71,8 @@ func (r *recommendList) downloadPic(outdir string) error {
 			}),
 			rain.WithBar(),
 		).Run()
-		if err != nil {
-			return err
+		if ctl.Error() != nil {
+			return ctl.Error()
 		}
 	}
 	return nil

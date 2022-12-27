@@ -15,6 +15,16 @@ func New(uri string, opts ...OptionFunc) *RainControl {
 	return std.New(uri, opts...)
 }
 
+// AddOptions 添加 New 时的 option
+func AddOptions(opt ...OptionFunc) {
+	std.AddOptions(opt...)
+}
+
+// SetOptions 设置 New 时的 option
+func SetOptions(opts []OptionFunc) {
+	std.SetOptions(opts)
+}
+
 // SetRoutineSize 设置协程下载最大字节数
 func SetRoutineSize(d int64) {
 	std.SetRoutineSize(d)

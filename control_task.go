@@ -115,7 +115,6 @@ func (ctl *control) download(task *Block) error {
 		res  *http.Response
 		dest io.Writer
 	)
-
 	// 创建文件写入器
 	dest = newWriteFunc(func(b []byte) (n int, err error) {
 		n, err = ctl.outfile.WriteAt(b, task.Start)
@@ -165,9 +164,8 @@ func (ctl *control) iocopy(dst io.Writer, src io.Reader, bufsize int) (written i
 		if err != nil && err != io.EOF {
 			return written, err
 		}
-		if ctl.rate != nil {
-			ctl.rate.WaitN(ctl.ctx, n)
-		}
+		// 消费限速器
+		ctl.rateWaitN(n)
 		dstbuf.Write(buf[0:n])
 		nw64 := int64(n)
 		atomic.AddInt64(ctl.completedSize, nw64)

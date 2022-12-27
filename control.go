@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"golang.org/x/time/rate"
 )
@@ -43,23 +44,25 @@ type control struct {
 	completedSize *int64
 	// threadCount 协程数量
 	threadCount int
-	// breakpointResume 断点续传
+	// breakpointResume 是否可以断点续传
 	breakpointResume bool
-	// multithread 多线程
+	// multithread 是否支持多线程
 	multithread bool
 	// outfile 文件指针
 	outfile *os.File
 	// breakpoint 断点
 	breakpoint *Breakpoint
-	// event 事件
+	// event 进度事件
 	event []ProgressEvent
-	// eventExend 事件扩展
+	// eventExend 进度事件扩展
 	eventExend []ProgressEventExtend
 	// sendEvent 事件发送
 	sendEvent func()
 	// rate 限速器
 	rate *rate.Limiter
 
+	// mux 锁
+	mux sync.Mutex
 	// err 运行时产生的错误
 	err error
 	// done 完成下载的通道通知
@@ -86,6 +89,7 @@ const (
 func (ctl *control) start(ctx context.Context) (err error) {
 	err = ctl.Init(ctx)
 	if err != nil {
+		ctl.err = err
 		return err
 	}
 	go ctl.startTask()
@@ -101,29 +105,26 @@ func (ctl *control) Init(ctx context.Context) error {
 		ctl.ctx, ctl.cancel = context.WithCancel(ctx)
 	}
 
-	// 初始化变量
-	ctl.completedSize = new(int64)
-	ctl.done = make(chan error, 1)
-	ctl.request.ctx = ctl.ctx
-	ctl.breakpoint = &Breakpoint{}
-
-	// 限速器
-	if ctl.config.SpeedLimit > 0 {
-		ctl.rate = rate.NewLimiter(rate.Limit(ctl.config.SpeedLimit), ctl.config.SpeedLimit)
-	}
-
 	// 资源基本信息
+	ctl.request.ctx = ctl.ctx
 	resInfo, err := ctl.request.getResourceInfo()
 	if err != nil {
 		return err
 	}
+
+	// 断点信息
+	ctl.breakpoint = &Breakpoint{
+		Filesize: resInfo.filesize,
+		Etag:     resInfo.etag,
+		Position: 0,
+		Tasks:    make([]*Block, 0),
+	}
+
+	// 设置限速器
+	ctl.setSpeedLimit(ctl.config.SpeedLimit)
+
 	ctl.multithread = resInfo.multithread
 	ctl.totalSize = resInfo.filesize
-	ctl.breakpoint.Filesize = resInfo.filesize
-	ctl.breakpoint.Etag = resInfo.etag
-	ctl.breakpoint.Tasks = make([]*Block, 0)
-
-	// 任务开始参数
 	ctl.threadCount = ctl.config.RoutineCount
 	ctl.breakpointResume = ctl.multithread && ctl.config.BreakpointResume
 
@@ -139,7 +140,7 @@ func (ctl *control) Init(ctx context.Context) error {
 		}
 	}
 
-	// 文件名检查
+	// 自动获取文件名
 	if ctl.outname == "" {
 		ctl.outname = resInfo.getFilename()
 	}
@@ -170,7 +171,7 @@ func (ctl *control) Init(ctx context.Context) error {
 	}
 
 	// 打开文件
-	ctl.outfile, err = os.OpenFile(ctl.outpath, os.O_CREATE|os.O_RDWR, ctl.perm)
+	ctl.outfile, err = os.OpenFile(ctl.outpath, os.O_CREATE|os.O_WRONLY, ctl.perm)
 	if err != nil {
 		return err
 	}
@@ -208,4 +209,28 @@ func (ctl *control) getError() error {
 // setStatus 设置下载状态
 func (ctl *control) setStatus(d Status) {
 	ctl.status = d
+}
+
+// setSpeedLimit 设置限速
+func (ctl *control) setSpeedLimit(speedLimit int) {
+	ctl.mux.Lock()
+	defer ctl.mux.Unlock()
+	if speedLimit > 0 {
+		ctl.rate = rate.NewLimiter(rate.Limit(speedLimit), speedLimit)
+	} else {
+		ctl.rate = nil
+	}
+	ctl.config.SpeedLimit = speedLimit
+}
+
+// rateWaitN 消费限速器
+func (ctl *control) rateWaitN(n int) {
+	if ctl.rate == nil {
+		return
+	}
+	ctl.mux.Lock()
+	defer ctl.mux.Unlock()
+	if ctl.rate != nil {
+		ctl.rate.WaitN(ctl.ctx, n)
+	}
 }

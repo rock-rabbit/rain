@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -13,6 +14,10 @@ import (
 type Rain struct {
 	// config 配置
 	config *Config
+	// options 默认的 option 参数
+	options []OptionFunc
+	// mux 锁
+	mux sync.Mutex
 
 	// client 默认 http 客户端
 	client *http.Client
@@ -59,18 +64,22 @@ func NewRain() *Rain {
 		Timeout: 0,
 	}
 	return &Rain{
-		config: NewConfig(),
-		client: client,
-		method: http.MethodGet,
-		body:   nil,
-		header: header,
-		perm:   0600,
-		outdir: "./",
+		config:  NewConfig(),
+		options: make([]OptionFunc, 0),
+		mux:     sync.Mutex{},
+		client:  client,
+		method:  http.MethodGet,
+		body:    nil,
+		header:  header,
+		perm:    0600,
+		outdir:  "./",
 	}
 }
 
 // New 创建下载控制器
 func (rain *Rain) New(uri string, opts ...OptionFunc) *RainControl {
+	rain.mux.Lock()
+	defer rain.mux.Unlock()
 	// 拷贝 header 数据
 	header := http.Header{}
 	for k, v := range rain.header {
@@ -86,8 +95,15 @@ func (rain *Rain) New(uri string, opts ...OptionFunc) *RainControl {
 			body:   rain.body,
 			header: header,
 		},
-		perm:   rain.perm,
-		outdir: rain.outdir,
+		perm:          rain.perm,
+		outdir:        rain.outdir,
+		done:          make(chan error, 1),
+		mux:           sync.Mutex{},
+		completedSize: new(int64),
+	}
+
+	for _, opt := range rain.options {
+		opt(ctl)
 	}
 
 	for _, opt := range opts {
@@ -95,6 +111,20 @@ func (rain *Rain) New(uri string, opts ...OptionFunc) *RainControl {
 	}
 
 	return &RainControl{ctl: ctl}
+}
+
+// AddOptions 添加 New 时的 option
+func (rain *Rain) AddOptions(opt ...OptionFunc) {
+	rain.mux.Lock()
+	defer rain.mux.Unlock()
+	rain.options = append(rain.options, opt...)
+}
+
+// SetOptions 设置 New 时的 option
+func (rain *Rain) SetOptions(opt []OptionFunc) {
+	rain.mux.Lock()
+	defer rain.mux.Unlock()
+	rain.options = opt
 }
 
 // SetClient 设置默认请求客户端
@@ -114,11 +144,16 @@ func (rain *Rain) SetBody(d io.Reader) {
 
 // SetHeader 设置默认请求 Header
 func (rain *Rain) SetHeader(k, v string) {
+	rain.mux.Lock()
+	defer rain.mux.Unlock()
+
 	rain.header.Set(k, v)
 }
 
 // ReplaceHeader 替换默认请求的 Header
 func (rain *Rain) ReplaceHeader(h http.Header) {
+	rain.mux.Lock()
+	defer rain.mux.Unlock()
 	rain.header = h
 }
 
@@ -198,21 +233,19 @@ func (rain *Rain) SetBreakpointExt(d string) {
 }
 
 // Run 阻塞运行下载
-func (rc *RainControl) Run() <-chan error {
-	return rc.RunContext(context.Background())
+func (rc *RainControl) Run() *RainControl {
+	rc.RunContext(context.Background())
+	return rc
 }
 
 // RunContext 基于 Context 阻塞运行下载
-func (rc *RainControl) RunContext(ctx context.Context) <-chan error {
-	ch := make(chan error, 1)
-	defer close(ch)
+func (rc *RainControl) RunContext(ctx context.Context) *RainControl {
 	err := rc.StartContext(ctx)
 	if err != nil {
-		ch <- err
-		return ch
+		return rc
 	}
-	ch <- <-rc.Wait()
-	return ch
+	<-rc.Wait()
+	return rc
 }
 
 // Start 非阻塞运行下载
@@ -243,4 +276,9 @@ func (rc *RainControl) Error() error {
 // Outpath 获取输出位置
 func (rc *RainControl) Outpath() string {
 	return rc.ctl.outpath
+}
+
+// SetSpeedLimit 设置下载限速，0 为不限速
+func (rc *RainControl) SetSpeedLimit(d int) {
+	rc.ctl.setSpeedLimit(d)
 }
