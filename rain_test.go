@@ -13,10 +13,6 @@ var task = []struct {
 	name string
 }{
 	{
-		uri:  "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4",
-		name: "test1m.mp4",
-	},
-	{
 		uri:  "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_5mb.mp4",
 		name: "test5m.mp4",
 	},
@@ -30,7 +26,7 @@ var task = []struct {
 func TestSingleThread(t *testing.T) {
 	rain.SetRoutineSize(1 << 20)
 	for _, v := range task {
-		ctl := rain.New(v.uri, rain.WithOutdir("./tmp"), rain.WithOutname(v.name), rain.WithEvent(rain.NewBar()))
+		ctl := rain.New(v.uri, rain.WithOutdir("./tmp"), rain.WithOutname(v.name), rain.WithBar())
 		err := <-ctl.Run()
 		if err != nil {
 			t.Fatal(err)
@@ -43,7 +39,7 @@ func TestThreads(t *testing.T) {
 	rain.SetRoutineSize(1 << 20)
 	rain.SetRoutineCount(7)
 	for _, v := range task {
-		ctl := rain.New(v.uri, rain.WithOutdir("./tmp"), rain.WithOutname(v.name))
+		ctl := rain.New(v.uri, rain.WithOutdir("./tmp"), rain.WithOutname(v.name), rain.WithBar())
 		err := <-ctl.Run()
 		if err != nil {
 			t.Fatal(err)
@@ -60,7 +56,7 @@ func TestEvent(t *testing.T) {
 			v.uri,
 			rain.WithOutdir("./tmp"),
 			rain.WithOutname(v.name),
-			rain.WithEvent(rain.NewBar()),
+			rain.WithBar(),
 		)
 		err := <-ctl.Run()
 		if err != nil {
@@ -72,13 +68,13 @@ func TestEvent(t *testing.T) {
 
 // 测试限速下载
 func TestSpeedLimit(t *testing.T) {
-	rain.SetSpeedLimit(1024 * 20)
+	rain.SetSpeedLimit(1024 * 50)
 	for _, v := range task {
 		ctl := rain.New(
 			v.uri,
 			rain.WithOutdir("./tmp"),
 			rain.WithOutname(v.name),
-			rain.WithEvent(rain.NewBar()),
+			rain.WithBar(),
 		)
 		err := <-ctl.Run()
 		if err != nil {
@@ -90,13 +86,13 @@ func TestSpeedLimit(t *testing.T) {
 
 // 测试下载中途取消
 func TestClose(t *testing.T) {
-	v := task[2]
+	v := task[1]
 
 	ctl := rain.New(
 		v.uri,
 		rain.WithOutdir("./tmp"),
 		rain.WithOutname(v.name),
-		rain.WithEvent(rain.NewBar()),
+		rain.WithBar(),
 	)
 	go func() {
 		time.Sleep(time.Second * 13)
@@ -120,7 +116,7 @@ func TestTimeout(t *testing.T) {
 	ctl := downloader.New(
 		"https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4",
 		rain.WithOutdir("./tmp"),
-		rain.WithEvent(rain.NewBar()),
+		rain.WithBar(),
 	)
 	err := <-ctl.Run()
 	if err != nil {

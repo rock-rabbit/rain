@@ -1,9 +1,8 @@
 package rain
 
 import (
-	"bytes"
 	"encoding/json"
-	"io"
+	"os"
 )
 
 // breakpoint 断点
@@ -18,23 +17,35 @@ type Breakpoint struct {
 	Tasks []*Block `json:"tasks"`
 }
 
-// breakpointParse 解析断点
-func breakpointParse(r io.Reader) (*Breakpoint, error) {
-	d, err := io.ReadAll(r)
+// loadBreakpoint 加载断点
+func loadBreakpoint(path string) (*Breakpoint, error) {
+	d, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var data Breakpoint
-	err = json.Unmarshal(d, &data)
+	var bp Breakpoint
+	err = json.Unmarshal(d, &bp)
 	if err != nil {
 		return nil, err
 	}
-	return &data, nil
+	for _, block := range bp.Tasks {
+		block.onstart = true
+	}
+	return &bp, nil
 }
 
 // addTask 添加任务
 func (bp *Breakpoint) addTask(task *Block) {
 	bp.Tasks = append(bp.Tasks, task)
+}
+
+// completedSize 已下载大小
+func (bp *Breakpoint) completedSize() int64 {
+	cl := bp.Position
+	for _, v := range bp.Tasks {
+		cl -= v.uncompletedSize()
+	}
+	return cl
 }
 
 // comparison 对比是否是相同资源
@@ -46,7 +57,7 @@ func (bp *Breakpoint) comparison(loadbp *Breakpoint) bool {
 }
 
 // export 导出
-func (bp *Breakpoint) export(w io.Writer) error {
+func (bp *Breakpoint) export(path string, perm os.FileMode) error {
 	if len(bp.Tasks) < 1 {
 		return nil
 	}
@@ -61,15 +72,14 @@ func (bp *Breakpoint) export(w io.Writer) error {
 		if v.isFinish() {
 			continue
 		}
+		if !v.isStart() {
+			continue
+		}
 		tmp.addTask(v)
 	}
 	d, err := json.Marshal(tmp)
 	if err != nil {
-		return err
+		return nil
 	}
-	_, err = io.Copy(w, bytes.NewReader(d))
-	if err != nil {
-		return err
-	}
-	return nil
+	return os.WriteFile(path, d, perm)
 }

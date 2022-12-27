@@ -28,8 +28,6 @@ go get -u github.com/rock-rabbit/rain
 * HTTP 代理
 * 完善单元测试
 * 完善性能测试
-* 搭建 rain 官网
-* 完善文档 √
 
 ## 使用方法
 
@@ -43,7 +41,7 @@ import "github.com/rock-rabbit/rain"
 func main() {
 	ctl := rain.New(
         "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4",
-        rain.WithEvent(rain.NewBar()),
+        rain.WithBar(),
     )
 	err := <-ctl.Run()
 	if err != nil {
@@ -62,8 +60,7 @@ func main() {
 
 对于以上示例进行解读：
 
-首先，使用 `rain.New` 方法创建了一个资源下载控制器，有两个参数、分别是：`资源链接`和`进度事件注册`，其中`进度事件注册`注册的是 rain 实现的`命令行进度条`。
-
+首先，使用 `rain.New` 方法创建了一个资源下载控制器，有两个参数、分别是：`资源链接`和`命令行进度条`。
 之后，我们执行了控制器的 `Run` 方法，`Run` 方法会执行下载并返回带有错误信息的通道，阻塞监听通道内的错误。
 
 最后，没有报错就表示下载完成，可以使用控制器的 `Outpath` 方法获取下载文件的绝对路径。
@@ -114,13 +111,13 @@ rain.WithHeader(d func(h http.Header))
 // WithPerm 设置默认输出文件权限，默认为：0600
 rain.WithPerm(d fs.FileMode)
 
-// WithRoutineSize 设置协程下载最大字节数，默认为：1048576 * 20，即 20M
+// WithRoutineSize 设置协程下载最大字节数，默认为：1048576 * 10，即 10M
 rain.WithRoutineSize(d int64)
 
 // WithRoutineCount 设置协程最大数，默认值为：1
 rain.WithRoutineCount(d int)
 
-// WithDiskCache 设置磁盘缓冲区大小，默认值为：1048576 * 16，即 16M
+// WithDiskCache 设置磁盘缓冲区大小，默认值为：1048576 * 1，即 1M
 rain.WithDiskCache(d int)
 
 // WithSpeedLimit 设置下载速度限制，默认值为：0，即不限速
@@ -129,7 +126,7 @@ rain.WithSpeedLimit(d int)
 // WithCreateDir 设置是否可以创建目录，默认值为：true
 rain.WithCreateDir(d bool)
 
-// WithAllowOverwrite 设置是否允许覆盖下载文件，默认值为：true
+// WithAllowOverwrite 设置是否允许覆盖下载文件，默认值为：false
 rain.WithAllowOverwrite(d bool)
 
 // WithBreakpointResume 设置是否启用断点续传，默认值为：true
@@ -167,7 +164,7 @@ rain.SetOutdir("./temp")
 
 // 因为上面已经修改了默认的配置，再次使用 rain.New 时就会应用配置
 uri := "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4"
-ctl := rain.New(uri, rain.WithEvent(rain.NewBar()))
+ctl := rain.New(uri, rain.WithBar())
 err := <-ctl.Run()
 if err != nil {
 	panic(err)
@@ -188,8 +185,9 @@ fmt.Printf("文件位置：%s\n", ctl.Outpath())
 
 `rain.SetXXX` 还有很多参数可以修改，具体可以自行查看。
 
-我们在下载时需要自己监听下载进度信息，可以参考一下例子：
+我们在下载时需要自己监听下载进度信息，我们有两种事件监听，可以参考一下例子：
 
+**第一种：简单的 Change 事件，所有状态都会触发。**
 ``` golang
 // RainProgress 监听下载
 type RainProgress struct{}
@@ -210,10 +208,48 @@ func main() {
 
 }
 ```
+**第二种：它对事件进行分类，stat 还多了一些属性：下载速度、下载所需时间。它的实现基于第一种事件。**
+``` golang
+// RainProgress 监听下载
+type RainProgress struct{}
 
-`rain.Stat` 结构体参数：
+// Change 进度变化
+func (*RainProgress) Change(stat *rain.EventExtend) {
+	fmt.Println(stat.Progress)
+}
+
+// Close 中途暂停
+func (*RainProgress) Close(stat *rain.EventExtend) {
+	fmt.Println("close")
+}
+
+// Error 出现错误
+func (*RainProgress) Error(stat *rain.EventExtend) {
+	fmt.Println("error", stat.Error)
+}
+
+// Finish 下载成功
+func (*RainProgress) Finish(stat *rain.EventExtend) {
+	fmt.Println("finish", stat.Outpath)
+}
+
+func main() {
+	uri := "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4"
+	ctl := rain.New(uri, rain.WithEventExtend(&RainProgress{}))
+	err := <-ctl.Run()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("文件位置：%s\n", ctl.Outpath())
+
+}
+```
+
+
+`rain.Stat` 和 `rain.EventExtend` 结构体参数：
 
 ``` golang
+// Stat 第一种事件的信息结构
 type Stat struct {
 	// Status 状态
 	Status Status
@@ -221,10 +257,6 @@ type Stat struct {
 	TotalLength int64
 	// CompletedLength 已下载的文件大小
 	CompletedLength int64
-	// DownloadSpeed 每秒下载字节数
-	DownloadSpeed int64
-	// EstimatedTime 预计下载完成还需要的时间
-	EstimatedTime time.Duration
 	// Progress 下载进度, 长度为 100
 	Progress int
 	// Outpath 文件输出路径
@@ -237,13 +269,27 @@ type Stat struct {
 type Status int
 
 const (
-	// STATUS_BEGIN 准备中，表示还未开始执行下载
+	// STATUS_BEGIN 准备中
 	STATUS_BEGIN = Status(iota)
-	// STATUS_RUNNING 运行中，表示正在执行下载操作
+	// STATUS_RUNNING 运行中
 	STATUS_RUNNING
-	// STATUS_FINISH 下载完成，不管报错或者下载成功都会是此状态
+	// STATUS_CLOSE 关闭
+	STATUS_CLOSE
+	// STATUS_ERROR 错误
+	STATUS_ERROR
+	// STATUS_FINISH 完成
 	STATUS_FINISH
 )
+
+// EventExtend 第二种事件的信息结构
+type EventExtend struct {
+	// Stat 信息
+	*Stat
+	// DownloadSpeed 每秒下载字节数
+	DownloadSpeed int64
+	// EstimatedTime 预计下载完成还需要的时间
+	EstimatedTime time.Duration
+}
 ```
 
 我们还可以自己创建一个全新的 rain 下载器，请看以下示例：
@@ -259,7 +305,7 @@ func main() {
 	ctl := downloader.New(
 		"https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4",
 		rain.WithOutdir("./images"),
-		rain.WithEvent(rain.NewBar()),
+		rain.WithBar(),
 	)
 	err := <-ctl.Run()
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"mime"
 	"net/url"
@@ -159,4 +160,21 @@ func regexGetOne(str, s string) string {
 		return ""
 	}
 	return submatch[1]
+}
+
+// writeFunc 代理写入
+type writeFunc struct {
+	writeFunc func([]byte) (n int, err error)
+}
+
+// newWriteFunc 代理写入
+func newWriteFunc(w func([]byte) (n int, err error)) io.Writer {
+	return &writeFunc{
+		writeFunc: w,
+	}
+}
+
+// Write 文件写入
+func (fa *writeFunc) Write(p []byte) (n int, err error) {
+	return fa.writeFunc(p)
 }

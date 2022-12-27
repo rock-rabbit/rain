@@ -29,8 +29,9 @@ type request struct {
 	retryTime time.Duration
 }
 
-// basic 资源基础信息
-type basic struct {
+// resourceInfo 资源信息
+type resourceInfo struct {
+	// uri 资源链接
 	uri string
 	// filesize 资源大小
 	filesize int64
@@ -45,7 +46,7 @@ type basic struct {
 }
 
 // getFilename 获取文件名
-func (b *basic) getFilename() string {
+func (b *resourceInfo) getFilename() string {
 	// 从附加信息中获取文件名
 	name := getMimeFilename(b.contentDisposition)
 	if name != "" {
@@ -60,8 +61,8 @@ func (b *basic) getFilename() string {
 	return fmt.Sprintf("file_%s%d", randomString(5, 1), time.Now().UnixNano())
 }
 
-// basic 获取请求资源的基础信息
-func (r *request) basic() (*basic, error) {
+// getResourceInfo 获取资源的基础信息
+func (r *request) getResourceInfo() (*resourceInfo, error) {
 	res, err := r.rangeDo(0, 9)
 	if err != nil {
 		return nil, err
@@ -72,7 +73,7 @@ func (r *request) basic() (*basic, error) {
 	contentLength := res.Header.Get("content-length")
 	acceptRanges := res.Header.Get("accept-ranges")
 
-	b := &basic{}
+	b := &resourceInfo{}
 	b.etag = res.Header.Get("etag")
 	b.contentType = res.Header.Get("content-type")
 	b.contentDisposition = res.Header.Get("content-disposition")
@@ -93,7 +94,6 @@ func (r *request) basic() (*basic, error) {
 			b.filesize, _ = strconv.ParseInt(contentLength, 10, 64)
 		}
 	}
-
 	return b, nil
 }
 

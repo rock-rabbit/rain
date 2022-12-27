@@ -28,6 +28,26 @@ func WithEvent(e ...ProgressEvent) OptionFunc {
 	}
 }
 
+// WithEventExtend 事件监听
+func WithEventExtend(e ...ProgressEventExtend) OptionFunc {
+	return func(ctl *control) {
+		ctl.addEventExtend(e...)
+	}
+}
+
+// WithBar 进度条
+func WithBar(bars ...*Bar) OptionFunc {
+	return func(ctl *control) {
+		var bar *Bar
+		if len(bars) > 0 {
+			bar = bars[0]
+		} else {
+			bar = NewBar()
+		}
+		ctl.addEventExtend(bar)
+	}
+}
+
 // WithClient 设置默认请求客户端
 func WithClient(d *http.Client) OptionFunc {
 	return func(ctl *control) {

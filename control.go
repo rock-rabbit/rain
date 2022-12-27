@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"math"
 	"os"
 	"path/filepath"
+
+	"golang.org/x/time/rate"
 )
 
 type control struct {
@@ -44,20 +45,20 @@ type control struct {
 	threadCount int
 	// breakpointResume 断点续传
 	breakpointResume bool
-	// basic 资源基本信息
-	basic *basic
+	// multithread 多线程
+	multithread bool
 	// outfile 文件指针
 	outfile *os.File
-	// bpfile 断点文件
-	bpfile *os.File
 	// breakpoint 断点
 	breakpoint *Breakpoint
 	// event 事件
 	event []ProgressEvent
+	// eventExend 事件扩展
+	eventExend []ProgressEventExtend
 	// sendEvent 事件发送
 	sendEvent func()
 	// rate 限速器
-	rate *Limiter
+	rate *rate.Limiter
 
 	// err 运行时产生的错误
 	err error
@@ -73,31 +74,33 @@ const (
 	STATUS_BEGIN = Status(iota)
 	// STATUS_RUNNING 运行中
 	STATUS_RUNNING
+	// STATUS_CLOSE 关闭
+	STATUS_CLOSE
+	// STATUS_ERROR 错误
+	STATUS_ERROR
 	// STATUS_FINISH 完成
 	STATUS_FINISH
 )
 
 // start 开始下载
-func (ctl *control) start(ctx context.Context) error {
-	var err error
+func (ctl *control) start(ctx context.Context) (err error) {
+	err = ctl.Init(ctx)
+	if err != nil {
+		return err
+	}
+	go ctl.startTask()
+	return nil
+}
+
+// Init 初始化
+func (ctl *control) Init(ctx context.Context) error {
 	// 新建 context
 	if ctl.config.Timeout > 0 {
 		ctl.ctx, ctl.cancel = context.WithTimeout(ctx, ctl.config.Timeout)
 	} else {
 		ctl.ctx, ctl.cancel = context.WithCancel(ctx)
 	}
-	// 准备变量、基本参数
-	err = ctl.begin()
-	if err != nil {
-		return err
-	}
-	go ctl.startTask()
 
-	return nil
-}
-
-// begin 准备，返回是否可以断点续传、是否可以多协程
-func (ctl *control) begin() error {
 	// 初始化变量
 	ctl.completedSize = new(int64)
 	ctl.done = make(chan error, 1)
@@ -106,31 +109,23 @@ func (ctl *control) begin() error {
 
 	// 限速器
 	if ctl.config.SpeedLimit > 0 {
-		ctl.rate = NewLimiter(Limit(ctl.config.SpeedLimit), ctl.config.SpeedLimit)
+		ctl.rate = rate.NewLimiter(rate.Limit(ctl.config.SpeedLimit), ctl.config.SpeedLimit)
 	}
 
 	// 资源基本信息
-	basic, err := ctl.request.basic()
+	resInfo, err := ctl.request.getResourceInfo()
 	if err != nil {
 		return err
 	}
-	ctl.basic = basic
-	ctl.totalSize = basic.filesize
-	ctl.breakpoint.Filesize = basic.filesize
-	ctl.breakpoint.Etag = basic.etag
+	ctl.multithread = resInfo.multithread
+	ctl.totalSize = resInfo.filesize
+	ctl.breakpoint.Filesize = resInfo.filesize
+	ctl.breakpoint.Etag = resInfo.etag
 	ctl.breakpoint.Tasks = make([]*Block, 0)
 
 	// 任务开始参数
-	ctl.threadCount = 1
-	if ctl.config.RoutineCount > 1 && basic.multithread {
-		// 开启最小协程数
-		ctl.threadCount = ctl.config.RoutineCount
-		maxCount := int(math.Ceil(float64(ctl.totalSize) / float64(ctl.config.RoutineSize)))
-		if maxCount < ctl.config.RoutineCount {
-			ctl.threadCount = maxCount
-		}
-	}
-	ctl.breakpointResume = basic.multithread && ctl.config.BreakpointResume
+	ctl.threadCount = ctl.config.RoutineCount
+	ctl.breakpointResume = ctl.multithread && ctl.config.BreakpointResume
 
 	// 文件夹检查
 	if !fileExist(ctl.outdir) {
@@ -146,7 +141,7 @@ func (ctl *control) begin() error {
 
 	// 文件名检查
 	if ctl.outname == "" {
-		ctl.outname = basic.getFilename()
+		ctl.outname = resInfo.getFilename()
 	}
 
 	// 文件名非法字符过滤
@@ -179,6 +174,15 @@ func (ctl *control) begin() error {
 	if err != nil {
 		return err
 	}
+
+	// 发送事件
+	if len(ctl.eventExend) > 0 {
+		ctl.addEvent(NewEventExtend(ctl.eventExend...))
+	}
+	if len(ctl.event) > 0 {
+		ctl.sendEvent = ctl.sendEventFunc()
+	}
+
 	return nil
 }
 
@@ -192,6 +196,7 @@ func (ctl *control) close() {
 	if ctl.cancel == nil {
 		return
 	}
+	ctl.setStatus(STATUS_CLOSE)
 	ctl.cancel()
 }
 

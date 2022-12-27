@@ -61,6 +61,8 @@ type Bar struct {
 	Stdout io.Writer
 }
 
+var _ ProgressEventExtend = &Bar{}
+
 func NewBar() *Bar {
 	t, _ := template.New("RainBarTemplate").Parse(`{{.CompletedLength}} / {{.TotalLength}} {{.Saucer}} {{.Progress}}% {{.DownloadSpeed}}/s {{.EstimatedTime}}`)
 	notsizeT, _ := template.New("RainBarNotSizeTemplate").Parse(`{{.CompletedLength}} {{.DownloadSpeed}}/s {{.ConsumingTime}}`)
@@ -82,8 +84,28 @@ func NewBar() *Bar {
 	}
 }
 
+// Change 进度变化
+func (bar *Bar) Change(stat *EventExtend) {
+	bar.change(stat)
+}
+
+// Close 中途暂停
+func (bar *Bar) Close(stat *EventExtend) {
+	bar.change(stat)
+}
+
+// Error 出现错误
+func (bar *Bar) Error(stat *EventExtend) {
+	bar.change(stat)
+}
+
+// Finish 下载成功
+func (bar *Bar) Finish(stat *EventExtend) {
+	bar.change(stat)
+}
+
 // Change 检查更新
-func (bar *Bar) Change(stat *Stat) {
+func (bar *Bar) change(stat *EventExtend) {
 	if stat.Status == STATUS_BEGIN || stat == nil {
 		return
 	}
@@ -114,7 +136,7 @@ func (bar *Bar) Change(stat *Stat) {
 }
 
 // barRender 渲染
-func barRender(bar *Bar, stat *Stat, template *template.Template, finish bool) error {
+func barRender(bar *Bar, stat *EventExtend, template *template.Template, finish bool) error {
 	// 是否使用人性化格式
 	formatFileSizeFunc := func(fileSize int64) string {
 		return fmt.Sprintf("%d B", fileSize)

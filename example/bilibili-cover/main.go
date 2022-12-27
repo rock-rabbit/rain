@@ -70,7 +70,7 @@ func (r *recommendList) downloadPic(outdir string) error {
 				h.Set("referer", referer)
 				h.Set("cookie", cookie)
 			}),
-			rain.WithEvent(rain.NewBar()),
+			rain.WithBar(),
 		).Run()
 		if err != nil {
 			return err
