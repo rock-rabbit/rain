@@ -3,9 +3,11 @@ package rain
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 )
@@ -130,6 +132,22 @@ func (rain *Rain) SetOptions(opt []OptionFunc) {
 // SetClient 设置默认请求客户端
 func (rain *Rain) SetClient(d *http.Client) {
 	rain.client = d
+}
+
+// SetProxy 设置客户端代理
+func (rain *Rain) SetProxy(p func(*http.Request) (*url.URL, error), h ...http.Header) error {
+	rain.mux.Lock()
+	defer rain.mux.Unlock()
+
+	val, ok := rain.client.Transport.(*http.Transport)
+	if !ok {
+		return errors.New("transport not is http.Transport")
+	}
+	val.Proxy = p
+	if len(h) > 0 {
+		val.ProxyConnectHeader = h[0]
+	}
+	return nil
 }
 
 // SetMethod 设置默认请求方式

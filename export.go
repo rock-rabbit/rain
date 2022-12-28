@@ -4,6 +4,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -13,6 +14,11 @@ var std = NewRain()
 // New 创建下载控制器
 func New(uri string, opts ...OptionFunc) *RainControl {
 	return std.New(uri, opts...)
+}
+
+// SetProxy 设置客户端代理
+func SetProxy(p func(*http.Request) (*url.URL, error), h ...http.Header) error {
+	return std.SetProxy(p, h...)
 }
 
 // AddOptions 添加 New 时的 option
