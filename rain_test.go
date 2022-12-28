@@ -3,8 +3,11 @@ package rain_test
 import (
 	"crypto/md5"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -193,6 +196,90 @@ func TestAutoFileRenaming(t *testing.T) {
 		_, outname := filepath.Split(ctl.Outpath())
 		if filename != outname {
 			t.Fatal(key, "文件名称错误", filename, outname)
+		}
+	}
+}
+
+// TcpServer tcp 测试服务
+func TcpServer(t *testing.T, c func(conn net.Conn)) net.Listener {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go c(conn)
+		}
+	}()
+	return l
+}
+
+// TestProxy 测试代理
+func TestProxy(t *testing.T) {
+	Init()
+	defer func() {
+		rain.SetProxy(http.ProxyFromEnvironment)
+	}()
+
+	proxyurl := ""
+
+	l := TcpServer(t, func(conn net.Conn) {
+		defer conn.Close()
+
+		b := make([]byte, 1024)
+		n, _ := conn.Read(b)
+
+		regurl := regexp.MustCompile(`GET (.*?) HTTP/1`).FindStringSubmatch(string(b))
+		if len(regurl) <= 1 {
+			return
+		}
+		urlstr, err := url.Parse(regurl[1])
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		proxyurl = regurl[1]
+
+		sconn, err := net.Dial("tcp", urlstr.Host)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		_, err = sconn.Write(b[:n])
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		go io.Copy(sconn, conn)
+		io.Copy(conn, sconn)
+
+	})
+	defer l.Close()
+	proxy := l.Addr().String()
+
+	for key, val := range tf {
+		server := NewFileServer(t, val.Path, func(w http.ResponseWriter, r *http.Request) {})
+		u, err := url.Parse("http://" + proxy)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rain.SetProxy(http.ProxyURL(u))
+		ctl := rain.New(server.URL).Run()
+		if ctl.Error() != nil {
+			t.Fatal(key, ctl.Error())
+		}
+		// 是否经过代理
+		if proxyurl != server.URL {
+			t.Fatal(key, "proxyurl != server.URL")
+		}
+		// 检查文件是否下载完成
+		if FileMD5(ctl.Outpath()) != val.MD5 {
+			t.Fatal(key, "md5 错误")
 		}
 	}
 }
