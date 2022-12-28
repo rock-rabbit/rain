@@ -6,3 +6,5 @@
 
 # 测试文件
 tmp
+test/*.out
+test/*.html

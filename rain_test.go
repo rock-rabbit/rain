@@ -92,8 +92,14 @@ var tf = []*TestFile{
 	},
 }
 
+// Init 初始化
+func Init() {
+	os.RemoveAll("./tmp")
+}
+
 // TestSingleThread 测试单协程下载
 func TestSingleThread(t *testing.T) {
+	Init()
 	for key, val := range tf {
 		server := NewFileServer(t, val.Path, func(w http.ResponseWriter, r *http.Request) {})
 		ctl := rain.New(server.URL).Run()
@@ -108,6 +114,7 @@ func TestSingleThread(t *testing.T) {
 
 // TestMultithread 测试多协程下载
 func TestMultithread(t *testing.T) {
+	Init()
 	for key, val := range tf {
 		server := NewFileServer(t, val.Path, func(w http.ResponseWriter, r *http.Request) {})
 		ctl := rain.New(server.URL, rain.WithRoutineCount(3)).Run()
@@ -122,6 +129,7 @@ func TestMultithread(t *testing.T) {
 
 // TestBar 测试 Bar 进度条
 func TestBar(t *testing.T) {
+	Init()
 	for key, val := range tf {
 		server := NewFileServer(t, val.Path, func(w http.ResponseWriter, r *http.Request) {})
 		ctl := rain.New(server.URL, rain.WithBar()).Run()
@@ -136,6 +144,7 @@ func TestBar(t *testing.T) {
 
 // TestClose 测试取消下载
 func TestClose(t *testing.T) {
+	Init()
 	for key, val := range tf {
 		server := NewFileServer(t, val.Path, func(w http.ResponseWriter, r *http.Request) {})
 		ctl := rain.New(server.URL, rain.WithSpeedLimit(1024<<10))
@@ -161,6 +170,7 @@ func TestClose(t *testing.T) {
 
 // TestAutoFileRenaming 测试文件重命名
 func TestAutoFileRenaming(t *testing.T) {
+	Init()
 	for key, val := range tf {
 		server := NewFileServer(t, val.Path, func(w http.ResponseWriter, r *http.Request) {})
 
