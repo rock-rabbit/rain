@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +13,9 @@ import (
 
 // request 资源请求器
 type request struct {
+	// debug 调试开关
+	debug bool
+	// ctx 上下文
 	ctx context.Context
 	// uri 请求资源链接
 	uri string
@@ -150,8 +154,17 @@ func (r *request) do(rsequest *http.Request) (*http.Response, error) {
 		requestError error
 		retryNum     = 0
 	)
+
+	r.logf("request header:")
+	if r.debug {
+		for key := range rsequest.Header {
+			r.logf("\t%s: %s", key, rsequest.Header.Get(key))
+		}
+	}
 	for ; ; retryNum++ {
 		res, requestError = r.client.Do(rsequest)
+		r.log("request: do retry num", retryNum)
+		r.log("request: status code", res.StatusCode)
 		if requestError == nil && res.StatusCode < 400 {
 			break
 		} else if retryNum+1 >= r.retryNumber {
@@ -166,4 +179,18 @@ func (r *request) do(rsequest *http.Request) (*http.Response, error) {
 		time.Sleep(r.retryTime)
 	}
 	return res, nil
+}
+
+// log 打印调试信息
+func (r *request) log(v ...interface{}) {
+	if r.debug {
+		log.Println(v...)
+	}
+}
+
+// logf 打印调试信息
+func (r *request) logf(format string, v ...any) {
+	if r.debug {
+		log.Printf(format, v...)
+	}
 }

@@ -63,8 +63,8 @@ func (se *EventExtend) sendEvent(s string) {
 
 // getRecord 获取每秒下载速度
 func (se *EventExtend) getRecord(n int64) int64 {
-	if len(se.record) >= 2 {
-		se.record = se.record[1:2:2]
+	if len(se.record) >= 5 {
+		se.record = se.record[1:5:5]
 	}
 	se.record = append(se.record, n)
 	var speed int64

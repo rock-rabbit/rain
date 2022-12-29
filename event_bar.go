@@ -106,7 +106,7 @@ func (bar *Bar) Finish(stat *EventExtend) {
 
 // Change 检查更新
 func (bar *Bar) change(stat *EventExtend) {
-	if stat.Status == STATUS_BEGIN || stat == nil {
+	if stat.Status == STATUS_BEGIN || stat.Status == STATUS_NOTSTART || stat == nil {
 		return
 	}
 	var templateEntity *template.Template
@@ -115,7 +115,7 @@ func (bar *Bar) change(stat *EventExtend) {
 	} else {
 		templateEntity = bar.Template.Template
 	}
-	if stat.Status == STATUS_FINISH {
+	if stat.Status == STATUS_FINISH || stat.Status == STATUS_CLOSE || stat.Status == STATUS_ERROR {
 		// 下载完成后清除进度条
 		if bar.FinishHide {
 			fmt.Printf("\r%s\r", strings.Repeat(" ", bar.Template.BarWidth))

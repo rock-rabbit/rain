@@ -26,6 +26,18 @@ type Stat struct {
 	Error error
 }
 
+// loadEvent 加载事件
+func (ctl *control) loadEvent() {
+	// 发送事件
+	if len(ctl.eventExend) > 0 {
+		ctl.addEvent(NewEventExtend(ctl.eventExend...))
+		ctl.eventExend = make([]ProgressEventExtend, 0)
+	}
+	if len(ctl.event) > 0 {
+		ctl.sendEvent = ctl.sendEventFunc()
+	}
+}
+
 // addEvent 新增事件
 func (ctl *control) addEvent(e ...ProgressEvent) {
 	ctl.event = append(ctl.event, e...)
@@ -40,7 +52,7 @@ func (ctl *control) addEventExtend(e ...ProgressEventExtend) {
 func (ctl *control) autoSendEvent() {
 	for {
 		select {
-		case <-time.After(time.Millisecond * 500):
+		case <-time.After(time.Millisecond * 200):
 			ctl.sendEvent()
 		case <-ctl.ctx.Done():
 			return

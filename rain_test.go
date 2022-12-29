@@ -1,6 +1,7 @@
 package rain_test
 
 import (
+	"bytes"
 	"crypto/md5"
 	"fmt"
 	"io"
@@ -58,14 +59,14 @@ func NewFileServer(t *testing.T, path string, exec func(w http.ResponseWriter, r
 			exec(w, r)
 
 			w.WriteHeader(http.StatusPartialContent)
-			w.Write(data[start:end])
+			io.Copy(w, bytes.NewBuffer(data[start:end+1]))
 			return
 		}
 
 		exec(w, r)
 
 		w.WriteHeader(http.StatusOK)
-		w.Write(data)
+		io.Copy(w, bytes.NewBuffer(data))
 	}))
 	_, filename := filepath.Split(path)
 	server.URL = server.URL + "/test/" + filename
@@ -105,7 +106,7 @@ func TestSingleThread(t *testing.T) {
 	Init()
 	for key, val := range tf {
 		server := NewFileServer(t, val.Path, func(w http.ResponseWriter, r *http.Request) {})
-		ctl := rain.New(server.URL).Run()
+		ctl := rain.New(server.URL, rain.WithBar()).Run()
 		if ctl.Error() != nil {
 			t.Fatal(ctl.Error())
 		}
@@ -120,7 +121,7 @@ func TestMultithread(t *testing.T) {
 	Init()
 	for key, val := range tf {
 		server := NewFileServer(t, val.Path, func(w http.ResponseWriter, r *http.Request) {})
-		ctl := rain.New(server.URL, rain.WithRoutineCount(3)).Run()
+		ctl := rain.New(server.URL, rain.WithRoutineCount(3), rain.WithRoutineSize(1024<<10)).Run()
 		if ctl.Error() != nil {
 			t.Fatal(ctl.Error())
 		}
@@ -196,6 +197,22 @@ func TestAutoFileRenaming(t *testing.T) {
 		_, outname := filepath.Split(ctl.Outpath())
 		if filename != outname {
 			t.Fatal(key, "文件名称错误", filename, outname)
+		}
+	}
+}
+
+// TestControlReuse 测试复用 control
+func TestControlReuse(t *testing.T) {
+	Init()
+	for key, val := range tf {
+		server := NewFileServer(t, val.Path, func(w http.ResponseWriter, r *http.Request) {})
+		ctl := rain.New(server.URL, rain.WithAutoFileRenaming(true)).Run()
+		if ctl.Error() != nil {
+			t.Fatal(key, ctl.Error())
+		}
+		ctl.Run()
+		if ctl.Error() != nil {
+			t.Fatal(key, ctl.Error())
 		}
 	}
 }
@@ -278,6 +295,46 @@ func TestProxy(t *testing.T) {
 			t.Fatal(key, "proxyurl != server.URL")
 		}
 		// 检查文件是否下载完成
+		if FileMD5(ctl.Outpath()) != val.MD5 {
+			t.Fatal(key, "md5 错误")
+		}
+	}
+}
+
+// TestSpeed 测试限速
+func TestSpeed(t *testing.T) {
+	Init()
+	for key, val := range tf {
+		server := NewFileServer(t, val.Path, func(w http.ResponseWriter, r *http.Request) {})
+		ctl := rain.New(server.URL, rain.WithSpeedLimit(1))
+		ctl.Start()
+		// 定时取消下载
+		go func() {
+			time.Sleep(time.Second * 2)
+			ctl.Close()
+		}()
+		<-ctl.Wait()
+		// 是否为限速下载
+		stat, _ := os.Stat(ctl.Outpath())
+		if stat.Size() > rain.COPY_BUFFER_SIZE*5 || stat.Size() < rain.COPY_BUFFER_SIZE {
+			t.Fatal("限速下载失败")
+		}
+		ctl.SetSpeedLimit(1024 << 10)
+		// 重新开始下载
+		err := ctl.Start()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// 测试中途修改下载速度
+		go func() {
+			time.Sleep(time.Second * 2)
+			// ctl.SetSpeedLimit(1024 << 10)
+		}()
+		<-ctl.Wait()
+		if ctl.Error() != nil {
+			t.Fatal(ctl.Error())
+		}
+		// 验证文件完整性
 		if FileMD5(ctl.Outpath()) != val.MD5 {
 			t.Fatal(key, "md5 错误")
 		}

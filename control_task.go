@@ -13,13 +13,25 @@ import (
 
 // startTask 开始任务
 func (ctl *control) startTask() {
+	ctl.log("download start")
+	ctl.log("outpath: ", ctl.outpath)
+
 	ctl.setStatus(STATUS_RUNNING)
 
 	// 加载下载块
 	blocks := ctl.loadBlocks()
+
+	ctl.log("blocks:")
+	if ctl.debug {
+		for _, v := range blocks {
+			ctl.logf("\t%#v", v)
+		}
+	}
+
 	if ctl.threadCount > len(blocks) {
 		ctl.threadCount = len(blocks)
 	}
+	ctl.log("routine count: ", ctl.threadCount)
 
 	taskchan := make(chan *Block)
 	done := make(chan error, ctl.threadCount)
@@ -36,18 +48,20 @@ func (ctl *control) startTask() {
 	}
 
 	// 分配任务
-Allot:
-	for _, block := range blocks {
-		select {
-		case taskchan <- block:
-			block.start()
-		case <-ctl.ctx.Done():
-			break Allot
+	go func() {
+	Allot:
+		for _, block := range blocks {
+			select {
+			case taskchan <- block:
+				block.start()
+			case <-ctl.ctx.Done():
+				break Allot
+			}
 		}
-	}
 
-	// 分配完成
-	close(taskchan)
+		// 分配完成
+		close(taskchan)
+	}()
 
 	// 等待任务完成
 	var errs []error
@@ -141,9 +155,6 @@ func (ctl *control) download(task *Block) error {
 	if int64(bufsize) > tasksize {
 		bufsize = int(tasksize)
 	}
-	if ctl.config.SpeedLimit > 0 && ctl.config.SpeedLimit < bufsize {
-		bufsize = ctl.config.SpeedLimit
-	}
 
 	// 数据拷贝
 	_, err = ctl.iocopy(dest, res.Body, bufsize)
@@ -153,12 +164,16 @@ func (ctl *control) download(task *Block) error {
 	return nil
 }
 
+// COPY_BUFFER_SIZE 接收数据的 buffer 大小
+const COPY_BUFFER_SIZE = 1024 * 32
+
 // iocopy 拷贝数据
 func (ctl *control) iocopy(dst io.Writer, src io.Reader, bufsize int) (written int64, err error) {
 	// 创建 buffer 缓冲区
 	dstbuf := bufio.NewWriterSize(dst, bufsize)
 	defer dstbuf.Flush()
-	buf := make([]byte, 32*1024)
+
+	buf := make([]byte, COPY_BUFFER_SIZE)
 	for {
 		n, err := src.Read(buf)
 		if err != nil && err != io.EOF {
@@ -180,7 +195,7 @@ func (ctl *control) iocopy(dst io.Writer, src io.Reader, bufsize int) (written i
 // finish 完成任务
 func (ctl *control) finish(err error) {
 	// 手动 Close
-	canceled := ctl.status == STATUS_CLOSE
+	canceled := errors.Is(err, context.Canceled)
 	if canceled {
 		err = nil
 	}
@@ -189,7 +204,7 @@ func (ctl *control) finish(err error) {
 		err = fmt.Errorf("timeout: %w", err)
 	}
 	ctl.err = err
-	ctl.close()
+	ctl.cancel()
 	// 断点文件
 	if fileExist(ctl.bpfilepath) {
 		if err == nil && !canceled {
@@ -202,12 +217,16 @@ func (ctl *control) finish(err error) {
 	if ctl.outfile != nil {
 		ctl.outfile.Close()
 	}
+
 	// 设置完成状态
 	if ctl.err != nil {
 		ctl.setStatus(STATUS_ERROR)
+	} else if canceled {
+		ctl.setStatus(STATUS_CLOSE)
 	} else {
 		ctl.setStatus(STATUS_FINISH)
 	}
+
 	// 发送完成信息
 	if ctl.sendEvent != nil {
 		ctl.sendEvent()

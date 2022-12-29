@@ -68,9 +68,6 @@ func randomString(size int, kind int) string {
 	if size < 1 {
 		return ""
 	}
-	if kind < 0 {
-		kind = 0
-	}
 	ikind, kinds, rsbytes := kind, [][]int{{10, 48}, {26, 97}, {26, 65}}, make([]byte, size)
 	isAll := kind > 2 || kind < 0
 	rand.Seed(time.Now().UnixNano())

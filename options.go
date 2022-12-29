@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+// WithDebug 设置 debug 调试信息开关
+func WithDebug(d bool) OptionFunc {
+	return func(ctl *control) {
+		ctl.setDebug(d)
+	}
+}
+
 // WithOutdir 文件输出目录
 func WithOutdir(outdir string) OptionFunc {
 	return func(ctl *control) {

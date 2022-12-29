@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -12,6 +13,8 @@ import (
 )
 
 type control struct {
+	// debug 调试模式
+	debug bool
 	// ctx 上下文
 	ctx context.Context
 	// cancel 取消上下文
@@ -73,8 +76,9 @@ type control struct {
 type Status int
 
 const (
+	STATUS_NOTSTART = Status(iota - 1)
 	// STATUS_BEGIN 准备中
-	STATUS_BEGIN = Status(iota)
+	STATUS_BEGIN
 	// STATUS_RUNNING 运行中
 	STATUS_RUNNING
 	// STATUS_CLOSE 关闭
@@ -87,6 +91,31 @@ const (
 
 // start 开始下载
 func (ctl *control) start(ctx context.Context) (err error) {
+	// 已经下载完成
+	if ctl.status == STATUS_FINISH {
+		return errors.New("status is finish")
+	}
+	// 已经在运行中
+	if ctl.status == STATUS_RUNNING || ctl.status == STATUS_BEGIN {
+		return errors.New("status is rinning")
+	}
+	// 启动已经关闭的下载
+	if ctl.status == STATUS_CLOSE || ctl.status == STATUS_ERROR {
+		ctl.log("reuse download: ", ctl.uri)
+		return ctl.reuse(ctx)
+	}
+
+	// 竞争首次启动
+	ctl.mux.Lock()
+	if ctl.status != STATUS_NOTSTART {
+		ctl.mux.Unlock()
+		return errors.New("status not is STATUS_NOTSTART")
+	}
+	ctl.setStatus(STATUS_BEGIN)
+	ctl.mux.Unlock()
+
+	ctl.log("new download: ", ctl.uri)
+
 	err = ctl.Init(ctx)
 	if err != nil {
 		ctl.err = err
@@ -96,17 +125,43 @@ func (ctl *control) start(ctx context.Context) (err error) {
 	return nil
 }
 
-// Init 初始化
-func (ctl *control) Init(ctx context.Context) error {
-	// 新建 context
+// reuse 复用操作
+func (ctl *control) reuse(ctx context.Context) (err error) {
+	ctl.packContext(ctx)
+	ctl.completedSize = new(int64)
+	ctl.done = make(chan error, 1)
+	ctl.err = nil
+
+	// 打开文件
+	ctl.outfile, err = os.OpenFile(ctl.outpath, os.O_CREATE|os.O_WRONLY, ctl.perm)
+	if err != nil {
+		return err
+	}
+
+	// 加载事件
+	ctl.loadEvent()
+
+	go ctl.startTask()
+
+	return nil
+}
+
+// packContext 包装上下文
+func (ctl *control) packContext(ctx context.Context) {
 	if ctl.config.Timeout > 0 {
 		ctl.ctx, ctl.cancel = context.WithTimeout(ctx, ctl.config.Timeout)
 	} else {
 		ctl.ctx, ctl.cancel = context.WithCancel(ctx)
 	}
+	ctl.request.ctx = ctl.ctx
+}
+
+// Init 初始化
+func (ctl *control) Init(ctx context.Context) error {
+	// 包装上下文
+	ctl.packContext(ctx)
 
 	// 资源基本信息
-	ctl.request.ctx = ctl.ctx
 	resInfo, err := ctl.request.getResourceInfo()
 	if err != nil {
 		return err
@@ -176,13 +231,8 @@ func (ctl *control) Init(ctx context.Context) error {
 		return err
 	}
 
-	// 发送事件
-	if len(ctl.eventExend) > 0 {
-		ctl.addEvent(NewEventExtend(ctl.eventExend...))
-	}
-	if len(ctl.event) > 0 {
-		ctl.sendEvent = ctl.sendEventFunc()
-	}
+	// 加载事件
+	ctl.loadEvent()
 
 	return nil
 }
@@ -197,8 +247,9 @@ func (ctl *control) close() {
 	if ctl.cancel == nil {
 		return
 	}
-	ctl.setStatus(STATUS_CLOSE)
 	ctl.cancel()
+	// 等待关闭
+	<-ctl.done
 }
 
 // getError 获取下载的错误信息
@@ -216,6 +267,9 @@ func (ctl *control) setSpeedLimit(speedLimit int) {
 	ctl.mux.Lock()
 	defer ctl.mux.Unlock()
 	if speedLimit > 0 {
+		if speedLimit < COPY_BUFFER_SIZE {
+			speedLimit = COPY_BUFFER_SIZE
+		}
 		ctl.rate = rate.NewLimiter(rate.Limit(speedLimit), speedLimit)
 	} else {
 		ctl.rate = nil
@@ -230,7 +284,25 @@ func (ctl *control) rateWaitN(n int) {
 	}
 	ctl.mux.Lock()
 	defer ctl.mux.Unlock()
-	if ctl.rate != nil {
-		ctl.rate.WaitN(ctl.ctx, n)
+	ctl.rate.WaitN(ctl.ctx, n)
+}
+
+// setDebug 设置 debug
+func (ctl *control) setDebug(v bool) {
+	ctl.debug = v
+	ctl.request.debug = v
+}
+
+// log 打印调试信息
+func (ctl *control) log(v ...interface{}) {
+	if ctl.debug {
+		log.Println(v...)
+	}
+}
+
+// logf 打印调试信息
+func (ctl *control) logf(format string, v ...any) {
+	if ctl.debug {
+		log.Printf(format, v...)
 	}
 }

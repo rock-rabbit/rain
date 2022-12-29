@@ -88,6 +88,7 @@ func (rain *Rain) New(uri string, opts ...OptionFunc) *RainControl {
 		header[k] = v
 	}
 	ctl := &control{
+		status: STATUS_NOTSTART,
 		uri:    uri,
 		config: rain.config.Copy(),
 		request: &request{
