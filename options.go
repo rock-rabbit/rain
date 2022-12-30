@@ -72,6 +72,9 @@ func WithMethod(d string) OptionFunc {
 // WithBody 设置默认请求 Body
 func WithBody(d io.Reader) OptionFunc {
 	return func(ctl *control) {
+		if d != nil {
+			d = NewMultiReadable(d)
+		}
 		ctl.request.body = d
 	}
 }

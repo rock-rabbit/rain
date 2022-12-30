@@ -61,7 +61,7 @@ func (r *recommendList) downloadPic(outdir string) error {
 			continue
 		}
 		fmt.Println("下载", idx, ":", item.Bvid, uri)
-		ctl := rain.New(
+		_, err := rain.New(
 			uri,
 			rain.WithOutdir(outdir),
 			rain.WithOutname(name),
@@ -71,8 +71,8 @@ func (r *recommendList) downloadPic(outdir string) error {
 			}),
 			rain.WithBar(),
 		).Run()
-		if ctl.Error() != nil {
-			return ctl.Error()
+		if err != nil {
+			return err
 		}
 	}
 	return nil

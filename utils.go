@@ -175,3 +175,49 @@ func newWriteFunc(w func([]byte) (n int, err error)) io.Writer {
 func (fa *writeFunc) Write(p []byte) (n int, err error) {
 	return fa.writeFunc(p)
 }
+
+// MultiReadable 重复读取 reader
+type MultiReadable struct {
+	originReader io.Reader
+	reader       io.Reader
+	cache        *bytes.Buffer
+}
+
+func NewMultiReadable(reader io.Reader) *MultiReadable {
+	return &MultiReadable{
+		originReader: reader,
+		reader:       reader,
+	}
+}
+
+func (mr *MultiReadable) Read(p []byte) (int, error) {
+	n, err := mr.reader.Read(p)
+	// 如果 reader 不支持Seek，则把读取出来的内容同时写入到一个buffer中
+	if _, ok := mr.reader.(io.Seeker); !ok && n > 0 {
+		if mr.cache == nil {
+			mr.cache = &bytes.Buffer{}
+		}
+		mr.cache.Write(p[:n])
+	}
+	return n, err
+}
+
+func (mr *MultiReadable) Reset() error {
+	// 如果reader支持Seek，直接使用Seek即可
+	if seeker, ok := mr.reader.(io.Seeker); ok {
+		_, err := seeker.Seek(0, io.SeekStart)
+		return err
+	}
+	if mr.cache != nil && mr.cache.Len() > 0 {
+		mr.reader = io.MultiReader(mr.cache, mr.reader)
+		mr.cache = nil
+	}
+	return nil
+}
+
+func (mr *MultiReadable) Close() error {
+	if closer, ok := mr.originReader.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
+}

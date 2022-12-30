@@ -88,17 +88,17 @@ func (se *EventExtend) Change(stat *Stat) {
 	}
 	se.oldCompletedLength = stat.CompletedLength
 
-	if se.Status == STATUS_ERROR {
+	if se.Status.Is(STATUS_ERROR) {
 		se.sendEvent("error")
 		return
 	}
 
-	if se.Status == STATUS_CLOSE {
+	if se.Status.Is(STATUS_CLOSE) {
 		se.sendEvent("close")
 		return
 	}
 
-	if se.Status == STATUS_FINISH {
+	if se.Status.Is(STATUS_FINISH) {
 		se.sendEvent("finish")
 		return
 	}

@@ -53,8 +53,8 @@ func NewConfig() *Config {
 	}
 }
 
-// Copy 拷贝数据
-func (cfg *Config) Copy() *Config {
+// Clone 拷贝数据
+func (cfg *Config) Clone() *Config {
 	tmp := *cfg
 	return &tmp
 }

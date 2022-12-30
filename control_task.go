@@ -18,7 +18,7 @@ func (ctl *control) startTask() {
 
 	ctl.setStatus(STATUS_RUNNING)
 
-	// 加载下载块
+	// 任务块数量不会太多，提前生产出来
 	blocks := ctl.loadBlocks()
 
 	ctl.log("blocks:")
@@ -28,26 +28,31 @@ func (ctl *control) startTask() {
 		}
 	}
 
+	// 任务块数量比设置的 goroutine 数量少，使用任务块的数量
 	if ctl.threadCount > len(blocks) {
 		ctl.threadCount = len(blocks)
 	}
-	ctl.log("routine count: ", ctl.threadCount)
 
+	ctl.log("goroutine count: ", ctl.threadCount)
+
+	// taskchan 负责任务的发送与接收
 	taskchan := make(chan *Block)
+	// done 负责接收 goroutine 错误
 	done := make(chan error, ctl.threadCount)
+	// 任务执行完毕，关闭 done channel
 	defer close(done)
 
-	// 执行任务
+	// 启动固定数量的 goroutine 消费任务
 	for i := 0; i < ctl.threadCount; i++ {
 		go ctl.execute(taskchan, done)
 	}
 
-	// 发送事件
+	// 有发送进度事件时，启动自动发送事件 goroutine
 	if len(ctl.event) > 0 {
 		go ctl.autoSendEvent()
 	}
 
-	// 分配任务
+	// 将任务发送到 channel 传递给消费任务的 goroutine
 	go func() {
 	Allot:
 		for _, block := range blocks {
@@ -59,7 +64,7 @@ func (ctl *control) startTask() {
 			}
 		}
 
-		// 分配完成
+		// 生产端负责关闭 channel
 		close(taskchan)
 	}()
 
@@ -80,7 +85,7 @@ func (ctl *control) startTask() {
 
 // loadBlocks 加载任务块
 func (ctl *control) loadBlocks() []*Block {
-	// 断点续传
+	// 可以进行断点续传时，加载断点文件
 	if ctl.breakpointResume {
 		bp, err := loadBreakpoint(ctl.bpfilepath)
 		if err == nil && ctl.breakpoint.comparison(bp) {
@@ -107,7 +112,8 @@ func (ctl *control) loadBlocks() []*Block {
 	return ctl.breakpoint.Tasks
 }
 
-// execute 执行任务
+// execute 执行任务的单个 goroutine
+// 不断地消费任务，直到没有任务或者出现错误
 func (ctl *control) execute(taskchan chan *Block, done chan error) {
 	for task := range taskchan {
 		if contextDone(ctl.ctx) {
@@ -122,7 +128,7 @@ func (ctl *control) execute(taskchan chan *Block, done chan error) {
 	done <- nil
 }
 
-// download 执行下载任务
+// download 执行下载任务的具体实现
 func (ctl *control) download(task *Block) error {
 	var (
 		err  error
@@ -133,8 +139,11 @@ func (ctl *control) download(task *Block) error {
 	dest = newWriteFunc(func(b []byte) (n int, err error) {
 		n, err = ctl.outfile.WriteAt(b, task.Start)
 		task.addStart(int64(n))
-		ctl.outfile.Sync()
-		ctl.breakpoint.export(ctl.bpfilepath, ctl.perm)
+		// 需要断点续传时，保存断点文件，输出文件强制存盘
+		if ctl.breakpointResume {
+			ctl.outfile.Sync()
+			ctl.breakpoint.export(ctl.bpfilepath, ctl.perm)
+		}
 		return
 	})
 
@@ -192,11 +201,10 @@ func (ctl *control) iocopy(dst io.Writer, src io.Reader, bufsize int) (written i
 	return written, err
 }
 
-// finish 完成任务
+// finish 执行下载结束后的善后工作
 func (ctl *control) finish(err error) {
 	// 手动 Close
-	canceled := errors.Is(err, context.Canceled)
-	if canceled {
+	if ctl.isclose {
 		err = nil
 	}
 	// 上下文超时
@@ -207,7 +215,7 @@ func (ctl *control) finish(err error) {
 	ctl.cancel()
 	// 断点文件
 	if fileExist(ctl.bpfilepath) {
-		if err == nil && !canceled {
+		if err == nil && !ctl.isclose {
 			os.Remove(ctl.bpfilepath)
 		} else {
 			ctl.breakpoint.export(ctl.bpfilepath, ctl.perm)
@@ -221,7 +229,7 @@ func (ctl *control) finish(err error) {
 	// 设置完成状态
 	if ctl.err != nil {
 		ctl.setStatus(STATUS_ERROR)
-	} else if canceled {
+	} else if ctl.isclose {
 		ctl.setStatus(STATUS_CLOSE)
 	} else {
 		ctl.setStatus(STATUS_FINISH)

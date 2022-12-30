@@ -63,6 +63,8 @@ type control struct {
 	sendEvent func()
 	// rate 限速器
 	rate *rate.Limiter
+	// isclose 是否执行了 close
+	isclose bool
 
 	// mux 锁
 	mux sync.Mutex
@@ -72,35 +74,18 @@ type control struct {
 	done chan error
 }
 
-// Status 运行状态
-type Status int
-
-const (
-	STATUS_NOTSTART = Status(iota - 1)
-	// STATUS_BEGIN 准备中
-	STATUS_BEGIN
-	// STATUS_RUNNING 运行中
-	STATUS_RUNNING
-	// STATUS_CLOSE 关闭
-	STATUS_CLOSE
-	// STATUS_ERROR 错误
-	STATUS_ERROR
-	// STATUS_FINISH 完成
-	STATUS_FINISH
-)
-
 // start 开始下载
 func (ctl *control) start(ctx context.Context) (err error) {
 	// 已经下载完成
-	if ctl.status == STATUS_FINISH {
+	if ctl.status.Is(STATUS_FINISH) {
 		return errors.New("status is finish")
 	}
 	// 已经在运行中
-	if ctl.status == STATUS_RUNNING || ctl.status == STATUS_BEGIN {
+	if ctl.status.Is(STATUS_BEGIN, STATUS_RUNNING) {
 		return errors.New("status is rinning")
 	}
 	// 启动已经关闭的下载
-	if ctl.status == STATUS_CLOSE || ctl.status == STATUS_ERROR {
+	if ctl.status.Is(STATUS_CLOSE, STATUS_ERROR) {
 		ctl.log("reuse download: ", ctl.uri)
 		return ctl.reuse(ctx)
 	}
@@ -118,7 +103,7 @@ func (ctl *control) start(ctx context.Context) (err error) {
 
 	err = ctl.Init(ctx)
 	if err != nil {
-		ctl.err = err
+		ctl.setStatus(STATUS_NOTSTART)
 		return err
 	}
 	go ctl.startTask()
@@ -130,6 +115,7 @@ func (ctl *control) reuse(ctx context.Context) (err error) {
 	ctl.packContext(ctx)
 	ctl.completedSize = new(int64)
 	ctl.done = make(chan error, 1)
+	ctl.isclose = false
 	ctl.err = nil
 
 	// 打开文件
@@ -191,7 +177,7 @@ func (ctl *control) Init(ctx context.Context) error {
 				return err
 			}
 		} else {
-			return errors.New("dir not exist")
+			return os.ErrNotExist
 		}
 	}
 
@@ -221,7 +207,7 @@ func (ctl *control) Init(ctx context.Context) error {
 			ctl.outpath, ctl.outname = autoFileRenaming(ctl.outdir, ctl.outname)
 			ctl.bpfilepath = filepath.Join(ctl.outdir, ctl.outname+ctl.config.BreakpointExt)
 		} else {
-			return errors.New("file exist")
+			return os.ErrExist
 		}
 	}
 
@@ -247,6 +233,7 @@ func (ctl *control) close() {
 	if ctl.cancel == nil {
 		return
 	}
+	ctl.isclose = true
 	ctl.cancel()
 	// 等待关闭
 	<-ctl.done
@@ -284,7 +271,10 @@ func (ctl *control) rateWaitN(n int) {
 	}
 	ctl.mux.Lock()
 	defer ctl.mux.Unlock()
-	ctl.rate.WaitN(ctl.ctx, n)
+	err := ctl.rate.WaitN(context.Background(), n)
+	if err != nil {
+		log.Println(err)
+	}
 }
 
 // setDebug 设置 debug

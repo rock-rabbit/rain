@@ -130,19 +130,19 @@ func (r *request) defaultDo() (*http.Response, error) {
 
 // request 根据参数生产请求，拷贝 header 信息
 func (r *request) request() (*http.Request, error) {
+	// body reader 重复读
+	if r.body != nil {
+		v, ok := r.body.(*MultiReadable)
+		if ok {
+			v.Reset()
+		}
+	}
 	req, err := http.NewRequestWithContext(r.ctx, r.method, r.uri, r.body)
 	if err != nil {
 		return nil, err
 	}
-	header := make(http.Header, len(r.header))
 
-	for k, v := range r.header {
-		tmpVal := make([]string, len(v))
-		copy(tmpVal, v)
-		header[k] = v
-	}
-
-	req.Header = header
+	req.Header = r.header.Clone()
 
 	return req, nil
 }

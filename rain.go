@@ -82,21 +82,17 @@ func NewRain() *Rain {
 func (rain *Rain) New(uri string, opts ...OptionFunc) *RainControl {
 	rain.mux.Lock()
 	defer rain.mux.Unlock()
-	// 拷贝 header 数据
-	header := http.Header{}
-	for k, v := range rain.header {
-		header[k] = v
-	}
+
 	ctl := &control{
 		status: STATUS_NOTSTART,
 		uri:    uri,
-		config: rain.config.Copy(),
+		config: rain.config.Clone(),
 		request: &request{
 			uri:    uri,
 			client: rain.client,
 			method: rain.method,
 			body:   rain.body,
-			header: header,
+			header: rain.header.Clone(),
 		},
 		perm:          rain.perm,
 		outdir:        rain.outdir,
@@ -158,6 +154,9 @@ func (rain *Rain) SetMethod(d string) {
 
 // SetBody 设置默认请求 Body
 func (rain *Rain) SetBody(d io.Reader) {
+	if d != nil {
+		d = NewMultiReadable(d)
+	}
 	rain.body = d
 }
 
@@ -252,33 +251,37 @@ func (rain *Rain) SetBreakpointExt(d string) {
 }
 
 // Run 阻塞运行下载
-func (rc *RainControl) Run() *RainControl {
-	rc.RunContext(context.Background())
-	return rc
+func (rc *RainControl) Run() (*RainControl, error) {
+	return rc.RunContext(context.Background())
 }
 
 // RunContext 基于 Context 阻塞运行下载
-func (rc *RainControl) RunContext(ctx context.Context) *RainControl {
-	err := rc.StartContext(ctx)
+func (rc *RainControl) RunContext(ctx context.Context) (*RainControl, error) {
+	_, err := rc.StartContext(ctx)
 	if err != nil {
-		return rc
+		return rc, err
 	}
-	<-rc.Wait()
-	return rc
+	err = rc.Wait()
+	return rc, err
 }
 
 // Start 非阻塞运行下载
-func (rc *RainControl) Start() error {
+func (rc *RainControl) Start() (*RainControl, error) {
 	return rc.StartContext(context.Background())
 }
 
 // StartContext 基于 Context 非阻塞运行下载
-func (rc *RainControl) StartContext(ctx context.Context) error {
-	return rc.ctl.start(ctx)
+func (rc *RainControl) StartContext(ctx context.Context) (*RainControl, error) {
+	return rc, rc.ctl.start(ctx)
 }
 
-// Wait 阻塞通知
-func (rc *RainControl) Wait() <-chan error {
+// Wait 阻塞
+func (rc *RainControl) Wait() error {
+	return <-rc.ctl.wait()
+}
+
+// WaitChan 阻塞返回 channel
+func (rc *RainControl) WaitChan() <-chan error {
 	return rc.ctl.wait()
 }
 
