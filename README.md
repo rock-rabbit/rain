@@ -1,5 +1,7 @@
 ## 📦 rain - 超快下载 http 资源
 
+[![Release](https://img.shields.io/github/v/release/rock-rabbit/rain)](https://github.com/rock-rabbit/rain/releases)
+
 rain 一款 golang 包，可以让你快速实现 http 协议的资源下载，为此 rain 拥有一些方便的特性，比如：多协程、断点续传、自动重命名、限速等。
 
 ## 🚀 安装
