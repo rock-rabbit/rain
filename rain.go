@@ -300,6 +300,11 @@ func (rc *RainControl) Outpath() string {
 	return rc.ctl.outpath
 }
 
+// Status 获取下载状态
+func (rc *RainControl) Status() Status {
+	return rc.ctl.status
+}
+
 // SetSpeedLimit 设置下载限速，0 为不限速
 func (rc *RainControl) SetSpeedLimit(d int) {
 	rc.ctl.setSpeedLimit(d)
