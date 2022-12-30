@@ -16,8 +16,6 @@ func (ctl *control) startTask() {
 	ctl.log("download start")
 	ctl.log("outpath: ", ctl.outpath)
 
-	ctl.setStatus(STATUS_RUNNING)
-
 	// 任务块数量不会太多，提前生产出来
 	blocks := ctl.loadBlocks()
 
@@ -35,6 +33,7 @@ func (ctl *control) startTask() {
 
 	ctl.log("goroutine count: ", ctl.threadCount)
 
+	ctl.setStatus(STATUS_RUNNING)
 	// taskchan 负责任务的发送与接收
 	taskchan := make(chan *Block)
 	// done 负责接收 goroutine 错误
@@ -85,6 +84,10 @@ func (ctl *control) startTask() {
 
 // loadBlocks 加载任务块
 func (ctl *control) loadBlocks() []*Block {
+	// ctl.breakpoint.Tasks 为 0 时为复用下载，已经存在下载任务
+	if len(ctl.breakpoint.Tasks) != 0 {
+		return ctl.breakpoint.Tasks
+	}
 	// 可以进行断点续传时，加载断点文件
 	if ctl.breakpointResume {
 		bp, err := loadBreakpoint(ctl.bpfilepath)

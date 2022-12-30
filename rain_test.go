@@ -218,10 +218,7 @@ func TestControlReuse(t *testing.T) {
 		if err != nil {
 			t.Fatal(key, err)
 		}
-		go func() {
-			time.Sleep(time.Second)
-			ctl.Close()
-		}()
+		ctl.Close()
 		err = ctl.Wait()
 		if err != nil {
 			t.Fatal(key, err)
