@@ -164,7 +164,9 @@ func (r *request) do(rsequest *http.Request) (*http.Response, error) {
 	for ; ; retryNum++ {
 		res, requestError = r.client.Do(rsequest)
 		r.log("request: do retry num", retryNum)
-		r.log("request: status code", res.StatusCode)
+		if requestError != nil {
+			r.log("request: error", requestError)
+		}
 		if requestError == nil && res.StatusCode < 400 {
 			break
 		} else if retryNum+1 >= r.retryNumber {
