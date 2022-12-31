@@ -144,7 +144,7 @@ func TestBar(t *testing.T) {
 	Init()
 	for key, val := range tf {
 		server := NewFileServer(t, val.Path)
-		ctl, err := rain.New(server.URL, rain.WithBar()).Run()
+		ctl, err := rain.New(server.URL, rain.WithSpeedLimit(1024<<10), rain.WithBar()).Run()
 		if err != nil {
 			t.Fatal(err)
 		}

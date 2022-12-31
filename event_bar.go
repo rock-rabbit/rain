@@ -31,7 +31,7 @@ type BarTemplate struct {
 }
 
 // BarStatString 注入到模版中的字符串结构
-// {{.CompletedLength}} / {{.TotalLength}} {{.Saucer}} {{.Progress}}% {{.DownloadSpeed}}/s {{.EstimatedTime}}
+// {{.CompletedLength}} / {{.TotalLength}} {{.Saucer}} {{.Progress}}% {{.DownloadSpeed}} {{.EstimatedTime}}
 type BarStatString struct {
 	// TotalLength 文件总大小
 	TotalLength string
@@ -64,8 +64,8 @@ type Bar struct {
 var _ ProgressEventExtend = &Bar{}
 
 func NewBar() *Bar {
-	t, _ := template.New("RainBarTemplate").Parse(`{{.CompletedLength}} / {{.TotalLength}} {{.Saucer}} {{.Progress}}% {{.DownloadSpeed}}/s {{.EstimatedTime}}`)
-	notsizeT, _ := template.New("RainBarNotSizeTemplate").Parse(`{{.CompletedLength}} {{.DownloadSpeed}}/s {{.ConsumingTime}}`)
+	t, _ := template.New("RainBarTemplate").Parse(`{{.CompletedLength}} / {{.TotalLength}} {{.Saucer}} {{.Progress}} {{.DownloadSpeed}} {{.EstimatedTime}}`)
+	notsizeT, _ := template.New("RainBarNotSizeTemplate").Parse(`{{.CompletedLength}} {{.DownloadSpeed}} {{.ConsumingTime}}`)
 	return &Bar{
 		Template: &BarTemplate{
 			Template:       t,
@@ -138,35 +138,44 @@ func (bar *Bar) change(stat *EventExtend) {
 // barRender 渲染
 func barRender(bar *Bar, stat *EventExtend, template *template.Template, finish bool) error {
 	// 是否使用人性化格式
-	formatFileSizeFunc := func(fileSize int64) string {
-		return fmt.Sprintf("%d B", fileSize)
-	}
-	formatTimeFunc := func(t time.Duration) string {
-		return fmt.Sprintf("%ds", int(t.Seconds()))
-	}
-	if bar.FriendlyFormat {
-		formatFileSizeFunc = formatFileSize
-		formatTimeFunc = func(t time.Duration) string {
-			return fmt.Sprintf("%v", t)
+	formatFileSizeFunc := func(fileSize int64, minsize int, suffix string) (r string) {
+		if bar.FriendlyFormat {
+			r = formatFileSize(fileSize)
+		} else {
+			r = fmt.Sprintf("%d B", fileSize)
 		}
+		if suffix != "" {
+			r = r + suffix
+		}
+		r = barStringSize(r, minsize)
+		return
+	}
+	formatTimeFunc := func(t time.Duration, minsize int) (r string) {
+		if bar.FriendlyFormat {
+			r = fmt.Sprintf("%v", t)
+		} else {
+			r = fmt.Sprintf("%ds", int(t.Seconds()))
+		}
+		r = barStringSize(r, minsize)
+		return
 	}
 
 	// 将数据转为字符串结构
 	statString := BarStatString{
 		// TotalLength 文件总大小
-		TotalLength: formatFileSizeFunc(stat.TotalLength),
+		TotalLength: formatFileSizeFunc(stat.TotalLength, 9, ""),
 
 		// CompletedLength 已下载大小
-		CompletedLength: formatFileSizeFunc(stat.CompletedLength),
+		CompletedLength: formatFileSizeFunc(stat.CompletedLength, 9, ""),
 
 		// DownloadSpeed 文件每秒下载速度
-		DownloadSpeed: formatFileSizeFunc(stat.DownloadSpeed),
+		DownloadSpeed: formatFileSizeFunc(stat.DownloadSpeed, 12, "/s"),
 
 		// EstimatedTime 预计下载完成还需要的时间
-		EstimatedTime: formatTimeFunc(stat.EstimatedTime),
+		EstimatedTime: formatTimeFunc(stat.EstimatedTime, 4),
 
 		// Progress 下载进度, 长度为 100
-		Progress: fmt.Sprint(stat.Progress),
+		Progress: barStringSize(fmt.Sprint(stat.Progress, "%"), 4),
 
 		// Saucer 这里使用 _____Saucer_____ 占位置, 长度 16
 		Saucer: "_____Saucer_____",
@@ -212,4 +221,12 @@ func barRender(bar *Bar, stat *EventExtend, template *template.Template, finish 
 	// 替换占位的进度条并打印
 	fmt.Fprintf(bar.Stdout, "\r%s", strings.ReplaceAll(barTemplateString, statString.Saucer, saucerBuffer.String()))
 	return nil
+}
+
+// barStringSize 最小化字符串
+func barStringSize(s string, minsize int) string {
+	if len(s) < minsize {
+		return s + strings.Repeat(" ", minsize-len(s))
+	}
+	return s
 }
