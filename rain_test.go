@@ -214,11 +214,14 @@ func TestControlReuse(t *testing.T) {
 	Init()
 	for key, val := range tf {
 		server := NewFileServer(t, val.Path)
-		ctl, err := rain.New(server.URL, rain.WithSpeedLimit(1024<<10)).Start()
+		ctl, err := rain.New(server.URL, rain.WithSpeedLimit(1024<<10), rain.WithBar()).Start()
 		if err != nil {
 			t.Fatal(key, err)
 		}
-		ctl.Close()
+		go func() {
+			time.Sleep(time.Second)
+			ctl.Close()
+		}()
 		err = ctl.Wait()
 		if err != nil {
 			t.Fatal(key, err)

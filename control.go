@@ -113,7 +113,6 @@ func (ctl *control) start(ctx context.Context) (err error) {
 // reuse 复用操作
 func (ctl *control) reuse(ctx context.Context) (err error) {
 	ctl.packContext(ctx)
-	ctl.completedSize = new(int64)
 	ctl.done = make(chan error, 1)
 	ctl.isclose = false
 	ctl.err = nil
