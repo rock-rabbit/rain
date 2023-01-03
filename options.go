@@ -4,6 +4,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"path/filepath"
 	"time"
 )
 
@@ -25,6 +26,13 @@ func WithOutdir(outdir string) OptionFunc {
 func WithOutname(outname string) OptionFunc {
 	return func(ctl *control) {
 		ctl.outname = outname
+	}
+}
+
+// WithOutpath 文件输出路径
+func WithOutpath(outpath string) OptionFunc {
+	return func(ctl *control) {
+		ctl.outdir, ctl.outname = filepath.Split(outpath)
 	}
 }
 
