@@ -25,7 +25,7 @@ go get -u github.com/rock-rabbit/rain
 - 运行时修改配置
 - 非阻塞下载
 
-当前测试覆盖： coverage: 78.5% of statements
+当前测试覆盖： coverage: 81.2% of statements
 
 ## 🛠️ 使用方法
 
