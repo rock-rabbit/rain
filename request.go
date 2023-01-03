@@ -6,9 +6,12 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/h2non/filetype"
 )
 
 // request 资源请求器
@@ -41,33 +44,40 @@ type resourceInfo struct {
 	filesize int64
 	// multithread 是否支持断点续传和多协程
 	multithread bool
-	// contentType 资源类型
-	contentType string
 	// contentDisposition 资源描述
 	contentDisposition string
+	// extension 扩展
+	extension string
 	// etag 资源唯一标识
 	etag string
 }
 
 // getFilename 获取文件名
-func (b *resourceInfo) getFilename() string {
-	// 从附加信息中获取文件名
-	name := getMimeFilename(b.contentDisposition)
-	if name != "" {
-		return name
+func (b *resourceInfo) getFilename() (name string) {
+	func() string {
+		// 从附加信息中获取文件名
+		name = getMimeFilename(b.contentDisposition)
+		if name != "" {
+			return name
+		}
+		// 从资源链接中获取文件名
+		name = getUriFilename(b.uri)
+		if name != "" {
+			return name
+		}
+		// 随机生成名称
+		return fmt.Sprintf("file_%s%d", randomString(5, 1), time.Now().UnixNano())
+	}()
+	// 如果获取的名称没有后缀，而魔数里获取到了后缀信息，则应用魔数后缀
+	if name != "" && filepath.Ext(name) == "" && b.extension != "" {
+		name = fmt.Sprintf("%s.%s", name, b.extension)
 	}
-	// 从资源链接中获取文件名
-	name = getUriFilename(b.uri)
-	if name != "" {
-		return name
-	}
-	// 随机生成名称
-	return fmt.Sprintf("file_%s%d", randomString(5, 1), time.Now().UnixNano())
+	return
 }
 
 // getResourceInfo 获取资源的基础信息
 func (r *request) getResourceInfo() (*resourceInfo, error) {
-	res, err := r.rangeDo(0, 9)
+	res, err := r.rangeDo(0, 261)
 	if err != nil {
 		return nil, err
 	}
@@ -79,9 +89,19 @@ func (r *request) getResourceInfo() (*resourceInfo, error) {
 
 	b := &resourceInfo{}
 	b.etag = res.Header.Get("etag")
-	b.contentType = res.Header.Get("content-type")
 	b.contentDisposition = res.Header.Get("content-disposition")
 	b.uri = r.uri
+
+	// 获取文件类型
+	var data []byte
+	data, err = io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	kind, _ := filetype.Match(data)
+	if kind != filetype.Unknown {
+		b.extension = kind.Extension
+	}
 
 	// 获取文件总大小
 	rangeList := strings.Split(contentRange, "/")
@@ -90,7 +110,7 @@ func (r *request) getResourceInfo() (*resourceInfo, error) {
 	}
 
 	// 是否可以使用多协程
-	if acceptRanges != "" || strings.Contains(contentRange, "bytes") || contentLength == "10" {
+	if acceptRanges != "" || strings.Contains(contentRange, "bytes") || contentLength == "262" {
 		b.multithread = true
 	} else {
 		// 不支持多协程重新获取文件总大小

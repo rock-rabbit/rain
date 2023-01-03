@@ -151,6 +151,7 @@ func (ctl *control) Init(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	ctl.logf("resourceInfo: %#v\n", resInfo)
 
 	// 断点信息
 	ctl.breakpoint = &Breakpoint{
